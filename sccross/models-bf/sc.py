@@ -482,39 +482,6 @@ class ZEncoder(cross.DataEncoder):
         std = F.softplus(self.std_lin(ptr)) + EPS
         return D.Normal(loc, std)
 
-
-class ZDecoder(cross.DataDecoder):
-
-    def __init__(
-            self, in_features: int, out_features: int,
-            h_depth: int = 1, h_dim: int = 50,
-            dropout: float = 0.2
-    ) -> None:
-        super().__init__()
-        self.h_depth = h_depth
-        ptr_dim = in_features
-        for layer in range(self.h_depth):
-            setattr(self, f"linear_{layer}", torch.nn.Linear(ptr_dim, h_dim))
-            setattr(self, f"act_{layer}", torch.nn.LeakyReLU(negative_slope=0.2))
-            setattr(self, f"bn_{layer}", torch.nn.BatchNorm1d(h_dim))
-            setattr(self, f"dropout_{layer}", torch.nn.Dropout(p=dropout))
-            ptr_dim = h_dim
-        self.loc = torch.nn.Linear(ptr_dim, out_features)
-        self.std_lin = torch.nn.Linear(ptr_dim, out_features)
-
-    def forward(  # pylint: disable=arguments-differ
-            self, x: torch.Tensor
-    ) -> Tuple[D.Normal, Optional[torch.Tensor]]:
-        ptr = x
-        for layer in range(self.h_depth):
-            ptr = getattr(self, f"linear_{layer}")(ptr)
-            ptr = getattr(self, f"act_{layer}")(ptr)
-            ptr = getattr(self, f"bn_{layer}")(ptr)
-            ptr = getattr(self, f"dropout_{layer}")(ptr)
-        loc = self.loc(ptr)
-        std = F.softplus(self.std_lin(ptr)) + EPS
-        return D.Normal(loc, std)
-
 class DataDecoder(cross.DataDecoder):
 
     r"""
@@ -614,7 +581,7 @@ class ZINDataDecoder(NormalDataDecoder):
         return ZIN(self.zi_logits[b].expand_as(loc), loc, std)
 
 
-class ZILNDataDecoder1(DataDecoder):
+class ZILNDataDecoder(DataDecoder):
 
     r"""
     Zero-inflated log-normal data decoder
@@ -642,54 +609,6 @@ class ZILNDataDecoder1(DataDecoder):
         loc = scale * (u @ v.t()) + self.bias[b]
         std = F.softplus(self.std_lin[b]) + EPS
         return ZILN(self.zi_logits[b].expand_as(loc), loc, std)
-
-
-class ZILNDataDecoder(DataDecoder):
-
-    r"""
-    Zero-inflated log-normal data decoder
-
-    Parameters
-    ----------
-    out_features
-        Output dimensionality
-    n_batches
-        Number of batches
-    """
-
-    def __init__(self, out_features: int, n_batches: int = 1) -> None:
-        super().__init__(out_features, n_batches=n_batches)
-        self.scale_lin = torch.nn.Parameter(torch.zeros(n_batches, out_features))
-        self.bias = torch.nn.Parameter(torch.zeros(n_batches, out_features))
-        self.zi_logits = torch.nn.Parameter(torch.zeros(n_batches, out_features))
-        self.std_lin = torch.nn.Parameter(torch.zeros(n_batches, out_features))
-        self.h_depth = 1
-        ptr_dim = 50
-        h_dim = out_features
-        #print(out_features)
-
-        setattr(self, f"linear_", torch.nn.Linear(ptr_dim, h_dim))
-        setattr(self, f"act_", torch.nn.LeakyReLU(negative_slope=0.2))
-        setattr(self, f"bn_", torch.nn.BatchNorm1d(h_dim))
-        setattr(self, f"dropout_", torch.nn.Dropout(p=0.2))
-
-    def forward(
-            self, u: torch.Tensor,
-            b: torch.Tensor, l: Optional[torch.Tensor]
-    ) -> ZILN:
-        ptr = u
-        # print(u.shape)
-        # print(v.shape)
-
-        ptr = getattr(self, f"linear_")(ptr)
-        ptr = getattr(self, f"act_")(ptr)
-        ptr = getattr(self, f"bn_")(ptr)
-        ptr = getattr(self, f"dropout_")(ptr)
-        scale = F.softplus(self.scale_lin[b])
-        loc = scale * ptr + self.bias[b]
-        std = F.softplus(self.std_lin[b]) + EPS
-        return ZILN(self.zi_logits[b].expand_as(loc), loc, std)
-
 
 class NBDataDecoder(DataDecoder):
 
@@ -850,44 +769,6 @@ class Discriminator(torch.nn.Sequential, cross.Discriminator):
             x = torch.cat([x, b_one_hot], dim=1)
         return super().forward(x)
 
-
-class Discriminator_gen(torch.nn.Sequential, cross.Discriminator):
-
-    r"""
-    Domain discriminator
-
-    Parameters
-    ----------
-    in_features
-        Input dimensionality
-    out_features
-        Output dimensionality
-    h_depth
-        Hidden layer depth
-    h_dim
-        Hidden layer dimensionality
-    dropout
-        Dropout rate
-    """
-
-    def __init__(
-            self, in_features: int, out_features: int, n_batches: int = 0,
-            h_depth: int = 2, h_dim: Optional[int] = 256,
-            dropout: float = 0.2
-    ) -> None:
-        self.n_batches = n_batches
-        od = collections.OrderedDict()
-        ptr_dim = in_features + self.n_batches
-        for layer in range(h_depth):
-            od[f"linear_{layer}"] = torch.nn.Linear(ptr_dim, h_dim)
-            od[f"act_{layer}"] = torch.nn.LeakyReLU(negative_slope=0.2)
-            od[f"dropout_{layer}"] = torch.nn.Dropout(p=dropout)
-            ptr_dim = h_dim
-        od["pred"] = torch.nn.Linear(ptr_dim, out_features)
-        super().__init__(od)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # pylint: disable=arguments-differ
-        return super().forward(x)
 
 class Classifier(torch.nn.Linear):
 

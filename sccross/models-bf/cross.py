@@ -182,29 +182,29 @@ class Prior(torch.nn.Module):
 
 class CROSS(torch.nn.Module):
 
+
+
     def __init__(
             self,
             x2u: Mapping[str, DataEncoder],
             u2z: Mapping[str, DataEncoder],
-            z2u: Mapping[str, DataDecoder],
             u2x: Mapping[str, DataDecoder],
-            du: Discriminator,
-            du_gen: Mapping[str, Discriminator], prior: Prior
+
+            du: Discriminator, prior: Prior
     ) -> None:
         super().__init__()
-        if not set(x2u.keys()) == set(u2x.keys()) != set():
+        if not set(x2u.keys()) == set(u2x.keys())  != set():
             raise ValueError(
                 "`x2u`, `u2x`, `idx` should share the same keys "
                 "and non-empty!"
             )
         self.keys = list(x2u.keys())  # Keeps a specific order
 
+
         self.x2u = torch.nn.ModuleDict(x2u)
         self.u2z = torch.nn.ModuleDict(u2z)
-        self.z2u = torch.nn.ModuleDict(z2u)
         self.u2x = torch.nn.ModuleDict(u2x)
 
-        self.du_gen = torch.nn.ModuleDict(du_gen)
         self.du = du
         self.prior = prior
 
@@ -280,15 +280,11 @@ class CROSSTrainer(Trainer):
             itertools.chain(
                 self.net.x2u.parameters(),
                 self.net.u2z.parameters(),
-                self.net.z2u.parameters(),
                 self.net.u2x.parameters()
             ), lr=self.lr, **kwargs
         )
         self.dsc_optim = getattr(torch.optim, optim)(
-            itertools.chain(
-                self.net.du.parameters(),
-                self.net.du_gen.parameters()),
-            lr=self.lr, **kwargs
+            self.net.du.parameters(), lr=self.lr, **kwargs
         )
 
         self.align_burnin: Optional[int] = None

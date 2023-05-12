@@ -413,17 +413,17 @@ class AnnDataset(Dataset):
 
 class SCCROSS(CROSS):
 
+
+
     def __init__(
             self,
             x2u: Mapping[str, sc.DataEncoder],
             u2z: Mapping[str, sc.DataEncoder],
-            z2u: Mapping[str, sc.DataDecoder],
             u2x: Mapping[str, sc.DataDecoder],
-            du: sc.Discriminator, du_gen: Mapping[str, sc.Discriminator_gen], prior: sc.Prior,
-
+            du: sc.Discriminator, prior: sc.Prior,
             u2c: Optional[sc.Classifier] = None
     ) -> None:
-        super().__init__(x2u, u2z, z2u, u2x, du, du_gen, prior)
+        super().__init__( x2u,u2z, u2x,  du, prior)
         self.u2c = u2c.to(self.device) if u2c else None
 
 
@@ -536,7 +536,7 @@ class SCCROSSTrainer(CROSSTrainer):
         net = self.net
         x, xalt, xbch, xlbl, xdwt, xflag = data
 
-        u, u1, z, l, x_gen, x_gen_cat, x_gen_flag_cat, usamp1 = {}, {}, {}, {}, {}, {}, {}, {}
+        u,z, l = {}, {}, {}
         for k in net.keys:
             u[k], l[k] = net.x2u[k](x[k], xalt[k], lazy_normalizer=dsc_only)
         usamp = {k: u[k].rsample() for k in net.keys}
@@ -547,19 +547,6 @@ class SCCROSSTrainer(CROSSTrainer):
 
         for k in net.keys:
             z[k] = net.u2z[k](u[k].mean)
-            u1[k] = net.z2u[k](z[k].mean)
-            usamp1[k] = u1[k].rsample()
-            x_gen[k] = net.u2x[k](
-                usamp1[k], xbch[k], l[k]
-            )
-            x_gen_cat[k] = torch.cat([x_gen[k].sample(), x[k]])
-            x_gen_flag_cat[k] = torch.cat([torch.zeros_like(xflag[k]), torch.ones_like(xflag[k])])
-        dsc_gen_loss = {
-            k: (F.cross_entropy(net.du_gen[k](x_gen_cat[k]), x_gen_flag_cat[k], reduction="none")).sum()
-            for k in net.keys
-        }
-
-        du_gen_loss_sum = sum(dsc_gen_loss[k] for k in net.keys)
 
         u_cat = torch.cat([z[k].mean for k in net.keys])
         xbch_cat = torch.cat([xbch[k] for k in net.keys])
@@ -568,12 +555,12 @@ class SCCROSSTrainer(CROSSTrainer):
         anneal = max(1 - (epoch - 1) / self.align_burnin, 0) \
             if self.align_burnin else 0
         if anneal:
-            noise = D.Normal(0, u_cat.std(axis=0)).sample((u_cat.shape[0],))
+            noise = D.Normal(0, u_cat.std(axis=0)).sample((u_cat.shape[0], ))
             u_cat = u_cat + (anneal * self.BURNIN_NOISE_EXAG) * noise
         dsc_loss = F.cross_entropy(net.du(u_cat, xbch_cat), xflag_cat, reduction="none")
         dsc_loss = (dsc_loss * xdwt_cat).sum() / xdwt_cat.numel()
         if dsc_only:
-            return {"dsc_loss": self.lam_align * (dsc_loss + du_gen_loss_sum)}
+            return {"dsc_loss": self.lam_align * dsc_loss}
 
         if net.u2c:
             xlbl_cat = torch.cat([xlbl[k] for k in net.keys])
@@ -584,12 +571,11 @@ class SCCROSSTrainer(CROSSTrainer):
         else:
             sup_loss = torch.tensor(0.0, device=self.net.device)
 
-        x_u1_nll = {
-            k: -net.u2x[k](
-                usamp1[k], xbch[k], l[k]
-            ).log_prob(x[k]).mean()
-            for k in net.keys
-        }
+
+
+
+
+
 
         x_nll = {
             k: -net.u2x[k](
@@ -603,15 +589,10 @@ class SCCROSSTrainer(CROSSTrainer):
             ).sum(dim=1).mean() / x[k].shape[1]
             for k in net.keys
         }
-        # u1_kl = {
-        #     k: D.kl_divergence(
-        #         u1[k], u[k]
-        #     ).sum(dim=1).mean() / x[k].shape[1]
-        #     for k in net.keys
-        # }
+
         means = sum(u[k].mean for k in net.keys) / len(net.keys)
         scale = sum(u[k].stddev for k in net.keys) / len(net.keys)
-        temp_D = D.Normal(means, scale)
+        temp_D = D.Normal(means,scale)
         z_kl = {
             k: D.kl_divergence(
                 z[k], temp_D
@@ -625,11 +606,11 @@ class SCCROSSTrainer(CROSSTrainer):
         }
         x_elbo_sum = sum(self.domain_weight[k] * x_elbo[k] for k in net.keys)
         z_kl_sum = sum(self.domain_weight[k] * z_kl[k] for k in net.keys)
-        x_u1_nll_sum = sum(self.domain_weight[k] * x_u1_nll[k] for k in net.keys)
-        # u1_kl_sum = sum(self.domain_weight[k] * u1_kl[k] for k in net.keys)
-        vae_loss = self.lam_data * (x_elbo_sum + x_u1_nll_sum) + 0.1 * z_kl_sum
+        vae_loss = self.lam_data * x_elbo_sum + 0.2*z_kl_sum
 
-        gen_loss = vae_loss - self.lam_align * (dsc_loss) - 10 * du_gen_loss_sum
+
+
+        gen_loss = vae_loss - self.lam_align * dsc_loss
 
         losses = {
             "dsc_loss": dsc_loss, "vae_loss": vae_loss, "gen_loss": gen_loss,
@@ -644,8 +625,6 @@ class SCCROSSTrainer(CROSSTrainer):
         if net.u2c:
             losses["sup_loss"] = sup_loss
         return losses
-
-
 
     def train_step(
             self, engine: ignite.engine.Engine, data: List[torch.Tensor]
@@ -1109,7 +1088,7 @@ class SCCROSSModel(Model):
 
         self.random_seed = random_seed
         torch.manual_seed(self.random_seed)
-        self.domains, x2u,u2z,z2u, u2x,du_gen ,all_ct = {}, {},{},{},{},  {}, set()
+        self.domains, x2u,u2z, u2x, all_ct = {}, {},{},  {}, set()
         for k, adata in adatas.items():
             if config.ANNDATA_KEY not in adata.uns:
                 raise ValueError(
@@ -1128,11 +1107,6 @@ class SCCROSSModel(Model):
                 h_depth=h_depth, h_dim=h_dim, dropout=dropout
             )
             u2z[k] = sc.ZEncoder(50, 50)
-            z2u[k] = sc.ZDecoder(50,50)
-            du_gen[k] = sc.Discriminator_gen(
-            len(data_config["features"]), 2, n_batches=0,
-            h_depth=h_depth, h_dim=h_dim, dropout=dropout
-            )
             data_config["batches"] = pd.Index([]) if data_config["batches"] is None \
                 else pd.Index(data_config["batches"])
             u2x[k] = select_decoder(data_config["prob_model"])(
@@ -1157,14 +1131,12 @@ class SCCROSSModel(Model):
         else:
             du_n_batches = 0
         du = sc.Discriminator(
-            latent_dim, len(self.domains), n_batches=du_n_batches,
+            50, len(self.domains), n_batches=du_n_batches,
             h_depth=h_depth, h_dim=h_dim, dropout=dropout
         )
-
-
         prior = sc.Prior()
         super().__init__(
-        x2u,u2z,z2u,u2x, du,du_gen, prior
+        x2u,u2z,u2x, du, prior
 
         )
 
@@ -1454,293 +1426,6 @@ class SCCROSSModel(Model):
 
         return torch.cat(result).numpy()
 
-
-    @torch.no_grad()
-    def generate_cross_old(
-            self, key1: str,key2: str, adata: AnnData, batch_size: int = 128,
-            n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        r"""
-        Compute data (cell) embedding
-
-        Parameters
-        ----------
-        key
-            Domain key
-        adata
-            Input dataset
-        batch_size
-            Size of minibatches
-        n_sample
-            Number of samples from the embedding distribution,
-            by default ``None``, returns the mean of the embedding distribution.
-
-        Returns
-        -------
-        data_embedding
-            Data (cell) embedding
-            with shape :math:`n_{cell} \times n_{dim}`
-            if ``n_sample`` is ``None``,
-            or shape :math:`n_{cell} \times n_{sample} \times n_{dim}`
-            if ``n_sample`` is not ``None``.
-        """
-        self.net.eval()
-        encoder = self.net.x2u[key1]
-
-        u2z = self.net.u2z[key1]
-        z2u = self.net.z2u[key2]
-        u2x = self.net.u2x[key2]
-        data = AnnDataset(
-            [adata], [self.domains[key1]],
-            mode="eval", getitem_size=batch_size
-        )
-
-        data_loader = DataLoader(
-            data, batch_size=1, shuffle=False,
-            num_workers=config.DATALOADER_NUM_WORKERS,
-            pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
-            persistent_workers=False
-        )
-
-
-        result = []
-        for x, xalt, *_ in data_loader:
-            u,l = encoder(
-                x.to(self.net.device, non_blocking=True),
-                xalt.to(self.net.device, non_blocking=True),
-                lazy_normalizer=True
-            )
-
-
-            #us = u.sample()
-            z = u2z(u.mean)
-            u1 = z2u(z.mean)
-            b = np.zeros(adata.shape[0], dtype=int)
-            #l = torch.Tensor(np.zeros(l.shape, dtype=int))
-
-            u1samp = u1.sample()
-            x_out = u2x(u1samp,b,l)
-            if n_sample:
-                result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            else:
-                result.append(x_out.mean.detach().cpu())
-
-        return torch.cat(result).numpy()
-
-
-
-    @torch.no_grad()
-    def generate_cross(
-            self, key1: str, key2: str, adata: AnnData, adata_other: AnnData, batch_size: int = 128,
-            n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        r"""
-        Compute data (cell) embedding
-
-        Parameters
-        ----------
-        key
-            Domain key
-        adata
-            Input dataset
-        batch_size
-            Size of minibatches
-        n_sample
-            Number of samples from the embedding distribution,
-            by default ``None``, returns the mean of the embedding distribution.
-
-        Returns
-        -------
-        data_embedding
-            Data (cell) embedding
-            with shape :math:`n_{cell} \times n_{dim}`
-            if ``n_sample`` is ``None``,
-            or shape :math:`n_{cell} \times n_{sample} \times n_{dim}`
-            if ``n_sample`` is not ``None``.
-        """
-        self.net.eval()
-        encoder = self.net.x2u[key1]
-        encoder_other = self.net.x2u[key2]
-
-        u2z = self.net.u2z[key1]
-        z2u = self.net.z2u[key2]
-        u2x = self.net.u2x[key2]
-        data = AnnDataset(
-            [adata], [self.domains[key1]],
-            mode="eval", getitem_size=batch_size
-        )
-        data_other = AnnDataset(
-            [adata_other], [self.domains[key2]],
-            mode="eval", getitem_size=batch_size
-        )
-
-        data_loader = DataLoader(
-            data, batch_size=1, shuffle=False,
-            num_workers=config.DATALOADER_NUM_WORKERS,
-            pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
-            persistent_workers=False
-        )
-
-        data_loader_other = DataLoader(
-            data_other, batch_size=1, shuffle=False,
-            num_workers=config.DATALOADER_NUM_WORKERS,
-            pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
-            persistent_workers=False
-        )
-
-        result = []
-        result_other = []
-        l_other = torch.Tensor().cuda()
-
-        for x, xalt, *_ in data_loader_other:
-            u_other,l_other_1 = encoder_other(
-                x.to(self.net.device, non_blocking=True),
-                xalt.to(self.net.device, non_blocking=True),
-                lazy_normalizer=True
-            )
-            l_other = torch.cat((l_other, l_other_1))
-            #
-            b = np.zeros(len(l_other_1), dtype=int)
-            #l = torch.Tensor(np.zeros(l.shape, dtype=int))
-
-            #print(l)
-            #
-            usamp_other = u_other.rsample()
-            # #usamp = u.rsample()
-            x_out_other = u2x(usamp_other, b, l_other_1)
-            # # if n_sample:
-            # #     result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            # # else:
-            # #     result.append(x_out.mean.detach().cpu())
-            #result_other.append(x_out_other.sample().cpu())
-            result_other.append(x.cpu())
-        #print(l_other)
-        l_other = torch.mean(l_other)
-        #print(l_other)
-
-        for x, xalt, *_ in data_loader:
-
-            u,l = encoder(
-                x.to(self.net.device, non_blocking=True),
-                xalt.to(self.net.device, non_blocking=True),
-                lazy_normalizer=True
-            )
-
-            # us = u.sample()
-            z = u2z(u.mean)
-            u1 = z2u(z.mean)
-            b = np.zeros(len(l), dtype=int)
-            # l = torch.Tensor(np.zeros(l.shape, dtype=int))
-            l = l/torch.mean(l)*l_other
-
-            #print(l)
-
-            u1samp = u1.rsample()
-            #usamp = u.rsample()
-            x_out = u2x(u1samp, b, l)
-            # if n_sample:
-            #     result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            # else:
-            #     result.append(x_out.mean.detach().cpu())
-            result.append(x_out.sample().cpu())
-
-        return torch.cat(result).numpy(),torch.cat(result_other).numpy()
-
-
-
-
-    @torch.no_grad()
-    def generate_align(
-            self, key1: str, adata: AnnData,  batch_size: int = 128,
-            n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        r"""
-        Compute data (cell) embedding
-
-        Parameters
-        ----------
-        key
-            Domain key
-        adata
-            Input dataset
-        batch_size
-            Size of minibatches
-        n_sample
-            Number of samples from the embedding distribution,
-            by default ``None``, returns the mean of the embedding distribution.
-
-        Returns
-        -------
-        data_embedding
-            Data (cell) embedding
-            with shape :math:`n_{cell} \times n_{dim}`
-            if ``n_sample`` is ``None``,
-            or shape :math:`n_{cell} \times n_{sample} \times n_{dim}`
-            if ``n_sample`` is not ``None``.
-        """
-        self.net.eval()
-        encoder = self.net.x2u[key1]
-
-
-        u2z = self.net.u2z[key1]
-        z2u = self.net.z2u[key1]
-        u2x = self.net.u2x[key1]
-
-        data = AnnDataset(
-            [adata], [self.domains[key1]],
-            mode="eval", getitem_size=batch_size
-        )
-
-
-        data_loader = DataLoader(
-            data, batch_size=1, shuffle=False,
-            num_workers=config.DATALOADER_NUM_WORKERS,
-            pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
-            persistent_workers=False
-        )
-
-
-
-        result = []
-        result_other = []
-
-
-
-
-
-        for x, xalt, *_ in data_loader:
-
-            u,l = encoder(
-                x.to(self.net.device, non_blocking=True),
-                xalt.to(self.net.device, non_blocking=True),
-                lazy_normalizer=True
-            )
-
-            # us = u.sample()
-            z = u2z(u.mean)
-            u1 = z2u(z.mean)
-            b = np.zeros(len(l), dtype=int)
-            # l = torch.Tensor(np.zeros(l.shape, dtype=int))
-            l = l/torch.mean(l)*l
-
-            #print(l)
-
-            u1samp = u1.rsample()
-            #usamp = u.rsample()
-            x_out = u2x(u1samp, b, l)
-            # if n_sample:
-            #     result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            # else:
-            #     result.append(x_out.mean.detach().cpu())
-            result.append(x_out.sample().cpu())
-            result_other.append(x.cpu())
-
-
-        return torch.cat(result).numpy(),torch.cat(result_other).numpy()
-
-
-
-
     @torch.no_grad()
     def encode_data1(
             self, key: str, adata: AnnData, batch_size: int = 128,
@@ -1893,6 +1578,5 @@ class SCCROSSModel(Model):
             f"{repr(self.net)}\n\n"
             f"{repr(self.trainer)}\n"
         )
-
 
 
