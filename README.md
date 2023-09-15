@@ -10,8 +10,8 @@ Single-cell multi-omics provides deep biological insights, but data scarcity and
 1. Integrate more than three matched or unmatchd sinlge cell multi-omics datasets of totally different or partly same kinds of omics into one latent space which can be used in following downsteam analysis. The cell amount can be over 4 million.
 2. Cross generate abitary two kinds of single cell data in training set to each other.
 3. Simulate matched single cell muti-omics data of a special cellular status in arbitary kind of omics and arbitary amount.
-4. Efficiently find key genes in comparing two kinds of cell clusters via in-silico pertubation.
-5. Effactivly maintain genome changing when perturbating one omics and cross generating to to other omics.
+4. Find key genes precisely in comparing two kinds of cell clusters via in-silico pertubation.
+5. Effectively maintain genome changing when perturbating one omics and cross generating to to other omics.
 
 
 ## Installation
