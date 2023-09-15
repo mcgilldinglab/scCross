@@ -27,16 +27,17 @@ pip3 install git+https://github.com/mcgilldinglab/scCross
 
 ## Tutorial:
 ### Data preprocessing
-* [scCross data preprocessing](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/data_preprocessing/preprocessing.ipynb)
+* [Data preprocessing](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/data_preprocessing/preprocessing.ipynb)
+
 ### Training scCross on matched mouse brain dataset
-* [scCross training matched mouse brain dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_brain.ipynb)
+* [Matched mouse brain dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_brain.ipynb)
 ### Training scCross on unmatched mouse brain dataset
-* [scCross training unmatched mouse brain dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_unmatched_mouse_brain.ipynb)
+* [Unmatched mouse brain dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_unmatched_mouse_brain.ipynb)
 ### Training scCross on matched mouse blood dataset
-* [scCross training matched mouse blood dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_blood.ipynb)
+* [Matched mouse blood dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_blood.ipynb)
 ### Training scCross on matched mouse lymph node dataset
-* [scCross training matched mouse lymph node dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_lymnode.ipynb)
+* [Matched mouse lymph node dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_lymnode.ipynb)
 ### Training scCross on human cell atlas dataset
-* [scCross training human cell atlas dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/training_human_cell_atlas.ipynb)
+* [Human cell atlas dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/training_human_cell_atlas.ipynb)
 ### Training scCross on COVID-19 dataset
-* [scCross training COVID-19 dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/training_COVID-19.ipynb)
+* [COVID-19 dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/training_COVID-19.ipynb)
