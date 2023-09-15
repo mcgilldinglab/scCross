@@ -1,1 +1,6 @@
-Codes for scCross.
+# scCross
+A Deep Learning-Based Model for integration, cross-modality generation and muti-omics simulation of single-cell multi-omics data and in-silico perturbations with the common latent experssion.
+
+## Overview
+<img title="Model Overview" alt="Alt text" src="/figures/main.png">
+Single-cell multi-omics provides deep biological insights, but data scarcity and modality integration remain significant challenges. We introduce scCross, harnessing variational autoencoder and generative adversarial network (VAE-GAN) principles, meticulously designed to integrate diverse single-cell multi-omics data. Incorporating biological priors, scCross adeptly aligns modalities with enhanced relevance. Its standout feature is generating cross-modality single-cell data and in-silico perturbations, enabling deeper cellular state examinations and drug explorations. Applied to dual and triple-omics datasets, scCross maps data into a unified latent space, surpassing existing methods. By addressing data limitations and offering novel biological insights, scCross promises to advance single-cell research and therapeutic discovery.
