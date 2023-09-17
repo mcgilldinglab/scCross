@@ -1,5 +1,5 @@
 # scCross
-A Deep Learning-Based Model for integration, cross-modality generation and muti-omics simulation of single-cell multi-omics data and in-silico perturbations with the common latent experssion.
+A Deep Learning-Based Model for integration, cross-dataset cross-modality generation and matched muti-omics simulation of single-cell multi-omics data. Our model can also maintain in-silico perturbations in cross-modality generation and can use in-silico perturbations to find key genes.
 
 ## Overview
 <img title="Model Overview" alt="Alt text" src="/figures/main.png">
