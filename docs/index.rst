@@ -12,20 +12,10 @@ Welcome to scCross's documentation!
    :width: 600
    :alt: Model architecture
 
-To get started with ``scCross``, check out the `installation guide <install.rst>`_ and `tutorials <tutorials.rst>`_.
+To get started with ``scCross``, check out the temp and temp.
 
 
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
-   install
-   tutorials
-   api
-   release
-   dev
-   credits
 
 Indices and tables
 ==================
