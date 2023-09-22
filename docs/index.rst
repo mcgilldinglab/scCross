@@ -12,5 +12,11 @@ Welcome to scCross's documentation!
 
 
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+
+   api
 
 
