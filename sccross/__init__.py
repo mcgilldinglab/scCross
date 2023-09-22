@@ -1,6 +1,3 @@
-r"""
-GLUE (Graph-Linked Unified Embedding)
-"""
 
 try:
     from importlib.metadata import version

@@ -3,8 +3,8 @@ requires = ["setuptools", "wheel", "flit_core >=3.2,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "scCross"
-version = "0.2.1"
+name = "sccross"
+version = "1.0.0"
 description = "Single cell multi-omic cross modal generation, simulation and perturbation"
 readme = "README.md"
 requires-python = ">=3.6"
