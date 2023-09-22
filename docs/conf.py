@@ -5,7 +5,11 @@ Sphinx configuration
 import inspect
 
 import sphinx_autodoc_typehints
-
+project = 'scCross'
+version = '1.0.0'
+release = '1.0.0'
+author = "Xiu-hui Yang"
+copyright = "Hao Wu Lab, 2023"
 
 extensions = [
     'sphinx.ext.autodoc',
