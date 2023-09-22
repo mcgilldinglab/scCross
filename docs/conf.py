@@ -5,13 +5,7 @@ Sphinx configuration
 import inspect
 
 import sphinx_autodoc_typehints
-import scglue
 
-project = scglue.name
-version = scglue.__version__
-release = scglue.__version__
-author = "Zhi-Jie Cao"
-copyright = "Gao Lab, 2022"
 
 extensions = [
     'sphinx.ext.autodoc',
@@ -43,7 +37,7 @@ autodoc_default_options = {
     'autosummary': True
 }
 
-html_favicon = '_static/favicon.ico'
+html_favicon = '_static/icon.ico'
 html_theme = 'sphinx_rtd_theme'
 
 intersphinx_mapping = dict(
