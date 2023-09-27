@@ -1,5 +1,4 @@
 
-
 import itertools
 import os
 from abc import abstractmethod
@@ -182,6 +181,8 @@ class Prior(torch.nn.Module):
 
 class CROSS(torch.nn.Module):
 
+
+
     def __init__(
             self,
             x2u: Mapping[str, DataEncoder],
@@ -192,12 +193,13 @@ class CROSS(torch.nn.Module):
             du_gen: Mapping[str, Discriminator], prior: Prior
     ) -> None:
         super().__init__()
-        if not set(x2u.keys()) == set(u2x.keys()) != set():
+        if not set(x2u.keys()) == set(u2x.keys())  != set():
             raise ValueError(
                 "`x2u`, `u2x`, `idx` should share the same keys "
                 "and non-empty!"
             )
         self.keys = list(x2u.keys())  # Keeps a specific order
+
 
         self.x2u = torch.nn.ModuleDict(x2u)
         self.u2z = torch.nn.ModuleDict(u2z)
@@ -226,23 +228,21 @@ class CROSS(torch.nn.Module):
         r"""
         Invalidated forward operation
         """
-        raise RuntimeError("CROSS does not support forward operation!")
+        raise RuntimeError("scCross does not support forward operation!")
 
 
-#----------------------------- Trainer definition ------------------------------
 
 DataTensors = Tuple[
-    Mapping[str, torch.Tensor],  # x (data)
-    Mapping[str, torch.Tensor],  # xflag (domain indicator)
-    torch.Tensor,  # eidx (edge index)
-    torch.Tensor,  # ewt (edge weight)
-    torch.Tensor  # esgn (edge sign)
-]  # Specifies the data format of input to CROSSTrainer.compute_losses
+    Mapping[str, torch.Tensor],
+    Mapping[str, torch.Tensor],
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor
+]
 
 
 @logged
 class CROSSTrainer(Trainer):
-
 
 
     def __init__(
@@ -279,9 +279,9 @@ class CROSSTrainer(Trainer):
         self.vae_optim = getattr(torch.optim, optim)(
             itertools.chain(
                 self.net.x2u.parameters(),
+                self.net.u2x.parameters(),
                 self.net.u2z.parameters(),
-                self.net.z2u.parameters(),
-                self.net.u2x.parameters()
+                self.net.z2u.parameters()
             ), lr=self.lr, **kwargs
         )
         self.dsc_optim = getattr(torch.optim, optim)(
@@ -528,6 +528,7 @@ class CROSSTrainer(Trainer):
         )
 
         self.align_burnin = align_burnin
+        self.safe_burnin = safe_burnin
 
         default_plugins = [Tensorboard()]
         if reduce_lr_patience:
@@ -554,6 +555,7 @@ class CROSSTrainer(Trainer):
             data_train.clean()
             data_val.clean()
             self.align_burnin = None
+            self.safe_burnin = None
 
 
     def get_losses(  # pylint: disable=arguments-differ

@@ -9,6 +9,7 @@ from typing import Any, List, Mapping, Optional, Tuple, Union
 
 import h5py
 import ignite
+
 import numpy as np
 import pandas as pd
 import scipy.sparse
@@ -18,11 +19,12 @@ import torch.nn.functional as F
 from anndata import AnnData
 from anndata._core.sparse_dataset import SparseDataset
 
+
 from ..typehint import AnyArray, RandomState
 from ..utils import config, get_chained_attr, get_rs, logged
 from . import sc
 from .base import Model
-from .data import DataLoader, Dataset
+from .data import  DataLoader, Dataset
 from .cross import CROSS, CROSSTrainer
 from .nn import freeze_running_stats, get_default_numpy_dtype
 
@@ -249,8 +251,7 @@ class AnnDataset(Dataset):
             for adata, data_config in zip(self.adatas, data_configs)
         ]
         x = [
-            np.empty((adata.shape[0], 0), dtype=default_dtype)
-            if xalt_.size else self._extract_x(adata, data_config)
+            self._extract_x(adata, data_config)
             for adata, data_config, xalt_ in zip(self.adatas, data_configs, xalt)
         ]
         xbch = xlbl = [
@@ -300,11 +301,7 @@ class AnnDataset(Dataset):
                     f"cannot be found in input data!"
                 )
             xalt = adata.obsm[use_rep].astype(default_dtype)
-            if xalt.shape[1] != rep_dim:
-                raise ValueError(
-                    f"Input representation dimensionality {xalt.shape[1]} "
-                    f"does not match the configured {rep_dim}!"
-                )
+
             return xalt
         return np.empty((adata.shape[0], 0), dtype=default_dtype)
 
@@ -398,20 +395,22 @@ class AnnDataset(Dataset):
         cum_frac = np.cumsum(fractions)
         view_idx = rs.permutation(self.view_idx)
         split_pos = np.round(cum_frac * view_idx.size).astype(int)
-        split_idx = np.split(view_idx, split_pos[:-1])  # Last pos produces an extra empty split
+        split_idx = np.split(view_idx, split_pos[:-1])
         subdatasets = []
         for idx in split_idx:
             sub = copy.copy(self)
             sub.view_idx = idx
             sub.size = idx.size
-            sub.shuffle_idx, sub.shuffle_pmsk = sub._get_idx_pmsk(idx)  # pylint: disable=protected-access
+            sub.shuffle_idx, sub.shuffle_pmsk = sub._get_idx_pmsk(idx)
             subdatasets.append(sub)
         return subdatasets
 
 
-#----------------------------- Network definition ------------------------------
+
 
 class SCCROSS(CROSS):
+
+
 
     def __init__(
             self,
@@ -419,28 +418,28 @@ class SCCROSS(CROSS):
             u2z: Mapping[str, sc.DataEncoder],
             z2u: Mapping[str, sc.DataDecoder],
             u2x: Mapping[str, sc.DataDecoder],
-            du: sc.Discriminator, du_gen: Mapping[str, sc.Discriminator_gen], prior: sc.Prior,
+            du: sc.Discriminator, du_gen: Mapping[str,sc.Discriminator_gen],prior: sc.Prior,
 
             u2c: Optional[sc.Classifier] = None
     ) -> None:
-        super().__init__(x2u, u2z, z2u, u2x, du, du_gen, prior)
+        super().__init__( x2u,u2z,z2u, u2x,  du,du_gen, prior)
         self.u2c = u2c.to(self.device) if u2c else None
 
 
 
 
-#----------------------------- Trainer definition ------------------------------
+
 
 DataTensors = Tuple[
-    Mapping[str, torch.Tensor],  # x (data)
-    Mapping[str, torch.Tensor],  # xalt (alternative input data)
-    Mapping[str, torch.Tensor],  # xbch (data batch)
-    Mapping[str, torch.Tensor],  # xlbl (data label)
-    Mapping[str, torch.Tensor],  # xdwt (domain discriminator sample weight)
-    Mapping[str, torch.Tensor],  # xflag (domain indicator)
-    torch.Tensor,  # eidx (edge index)
-    torch.Tensor,  # ewt (edge weight)
-    torch.Tensor  # esgn (edge sign)
+    Mapping[str, torch.Tensor],
+    Mapping[str, torch.Tensor],
+    Mapping[str, torch.Tensor],
+    Mapping[str, torch.Tensor],
+    Mapping[str, torch.Tensor],
+    Mapping[str, torch.Tensor],
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor
 ]
 
 
@@ -449,7 +448,7 @@ class SCCROSSTrainer(CROSSTrainer):
 
 
 
-    BURNIN_NOISE_EXAG: float = 1.5  # Burn-in noise exaggeration
+    BURNIN_NOISE_EXAG: float = 1.5
 
     def __init__(
             self, net: SCCROSS, lam_data: float = None, lam_kl: float = None,
@@ -530,7 +529,7 @@ class SCCROSSTrainer(CROSSTrainer):
 
         return x, xalt, xbch, xlbl, xdwt, xflag
 
-    def compute_losses(
+    def compute_losses1(
             self, data: DataTensors, epoch: int, dsc_only: bool = False
     ) -> Mapping[str, torch.Tensor]:
         net = self.net
@@ -548,18 +547,21 @@ class SCCROSSTrainer(CROSSTrainer):
         for k in net.keys:
             z[k] = net.u2z[k](u[k].mean)
             u1[k] = net.z2u[k](z[k].mean)
+
             usamp1[k] = u1[k].rsample()
             x_gen[k] = net.u2x[k](
                 usamp1[k], xbch[k], l[k]
             )
             x_gen_cat[k] = torch.cat([x_gen[k].sample(), x[k]])
-            x_gen_flag_cat[k] = torch.cat([torch.zeros_like(xflag[k]), torch.ones_like(xflag[k])])
+            x_gen_flag_cat[k] = torch.cat([xflag[k], torch.ones_like(xflag[k])])
         dsc_gen_loss = {
             k: (F.cross_entropy(net.du_gen[k](x_gen_cat[k]), x_gen_flag_cat[k], reduction="none")).sum()
             for k in net.keys
         }
 
         du_gen_loss_sum = sum(dsc_gen_loss[k] for k in net.keys)
+
+
 
         u_cat = torch.cat([z[k].mean for k in net.keys])
         xbch_cat = torch.cat([xbch[k] for k in net.keys])
@@ -573,7 +575,7 @@ class SCCROSSTrainer(CROSSTrainer):
         dsc_loss = F.cross_entropy(net.du(u_cat, xbch_cat), xflag_cat, reduction="none")
         dsc_loss = (dsc_loss * xdwt_cat).sum() / xdwt_cat.numel()
         if dsc_only:
-            return {"dsc_loss": self.lam_align * (dsc_loss + du_gen_loss_sum)}
+            return {"dsc_loss": self.lam_align * (dsc_loss+du_gen_loss_sum )}
 
         if net.u2c:
             xlbl_cat = torch.cat([xlbl[k] for k in net.keys])
@@ -583,13 +585,6 @@ class SCCROSSTrainer(CROSSTrainer):
             ).sum() / max(lmsk.sum(), 1)
         else:
             sup_loss = torch.tensor(0.0, device=self.net.device)
-
-        x_u1_nll = {
-            k: -net.u2x[k](
-                usamp1[k], xbch[k], l[k]
-            ).log_prob(x[k]).mean()
-            for k in net.keys
-        }
 
         x_nll = {
             k: -net.u2x[k](
@@ -603,12 +598,7 @@ class SCCROSSTrainer(CROSSTrainer):
             ).sum(dim=1).mean() / x[k].shape[1]
             for k in net.keys
         }
-        # u1_kl = {
-        #     k: D.kl_divergence(
-        #         u1[k], u[k]
-        #     ).sum(dim=1).mean() / x[k].shape[1]
-        #     for k in net.keys
-        # }
+
         means = sum(u[k].mean for k in net.keys) / len(net.keys)
         scale = sum(u[k].stddev for k in net.keys) / len(net.keys)
         temp_D = D.Normal(means, scale)
@@ -625,11 +615,10 @@ class SCCROSSTrainer(CROSSTrainer):
         }
         x_elbo_sum = sum(self.domain_weight[k] * x_elbo[k] for k in net.keys)
         z_kl_sum = sum(self.domain_weight[k] * z_kl[k] for k in net.keys)
-        x_u1_nll_sum = sum(self.domain_weight[k] * x_u1_nll[k] for k in net.keys)
-        # u1_kl_sum = sum(self.domain_weight[k] * u1_kl[k] for k in net.keys)
-        vae_loss = self.lam_data * (x_elbo_sum + x_u1_nll_sum) + 0.1 * z_kl_sum
 
-        gen_loss = vae_loss - self.lam_align * (dsc_loss) - 10 * du_gen_loss_sum
+        vae_loss = self.lam_data * x_elbo_sum + 0.1 * z_kl_sum
+
+        gen_loss = vae_loss - self.lam_align * (dsc_loss+du_gen_loss_sum)
 
         losses = {
             "dsc_loss": dsc_loss, "vae_loss": vae_loss, "gen_loss": gen_loss,
@@ -647,31 +636,237 @@ class SCCROSSTrainer(CROSSTrainer):
 
 
 
+    def compute_losses(
+            self, data: DataTensors, epoch: int, dsc_only: bool = False
+    ) -> Mapping[str, torch.Tensor]:
+        net = self.net
+        x, xalt, xbch, xlbl, xdwt, xflag = data
+        x_p = {}
+        xalt1 = {}
+
+        for k in net.keys:
+            x_p[k] = xalt[k][:, -50:]
+            xalt1[k] = xalt[k][:, :-50]
+
+
+        u ,u1,z, l,x_gen,x_gen_cat,x_gen_flag_cat,usamp1 = {}, {}, {},{},{},{},{},{}
+        for k in net.keys:
+            u[k], l[k] = net.x2u[k](x[k], xalt1[k], lazy_normalizer=dsc_only)
+        usamp = {k: u[k].rsample() for k in net.keys}
+
+
+        if self.normalize_u:
+            usamp = {k: F.normalize(usamp[k], dim=1) for k in net.keys}
+        prior = net.prior()
+
+        for k in net.keys:
+            z[k] = net.u2z[k](u[k].mean)
+            u1[k] = net.z2u[k](z[k].mean)
+            usamp1[k] = u1[k].rsample()
+            x_gen[k] = net.u2x[k](
+                usamp1[k], xbch[k], l[k]
+            )
+            x_gen_cat[k] = torch.cat([x_gen[k].sample(),x[k]])
+            x_gen_flag_cat[k] = torch.cat([torch.zeros_like(xflag[k]),torch.ones_like(xflag[k])])
+        dsc_gen_loss = {
+            k : (F.cross_entropy(net.du_gen[k](x_gen_cat[k]), x_gen_flag_cat[k], reduction="none")).sum()
+            for k in net.keys
+        }
+
+        zsamp = {k: z[k].rsample() for k in net.keys}
+
+        du_gen_loss_sum = sum(dsc_gen_loss[k] for k in net.keys)
+
+        u_cat = torch.cat([z[k].mean for k in net.keys])
+        xbch_cat = torch.cat([xbch[k] for k in net.keys])
+        xdwt_cat = torch.cat([xdwt[k] for k in net.keys])
+        xflag_cat = torch.cat([xflag[k] for k in net.keys])
+        anneal = max(1 - (epoch - 1) / self.align_burnin, 0) \
+            if self.align_burnin else 0
+        if anneal:
+            noise = D.Normal(0, u_cat.std(axis=0)).sample((u_cat.shape[0], ))
+            u_cat = u_cat + (anneal * self.BURNIN_NOISE_EXAG) * noise
+        dsc_loss = F.cross_entropy(net.du(u_cat, xbch_cat), xflag_cat, reduction="none")
+        dsc_loss = (dsc_loss * xdwt_cat).sum() / xdwt_cat.numel()
+        if dsc_only:
+            return {"dsc_loss": self.lam_align * (dsc_loss+du_gen_loss_sum)}
+
+
+        if net.u2c:
+            xlbl_cat = torch.cat([xlbl[k] for k in net.keys])
+            lmsk = xlbl_cat >= 0
+            sup_loss = F.cross_entropy(
+                net.u2c(u_cat[lmsk]), xlbl_cat[lmsk], reduction="none"
+            ).sum() / max(lmsk.sum(), 1)
+        else:
+            sup_loss = torch.tensor(0.0, device=self.net.device)
+
+        x_u1_nll = {
+            k: -net.u2x[k](
+                usamp1[k], xbch[k], l[k]
+            ).log_prob(x[k]).mean()
+            for k in net.keys
+        }
+
+
+        x_nll = {
+            k: -net.u2x[k](
+                usamp[k], xbch[k], l[k]
+            ).log_prob(x[k]).mean()
+            for k in net.keys
+        }
+
+        x_kl = {
+            k: D.kl_divergence(
+                u[k], prior
+            ).sum(dim=1).mean() / x[k].shape[1]
+            for k in net.keys
+        }
+
+        means = sum(u[k].mean for k in net.keys) / len(net.keys)
+        scale = sum(u[k].stddev for k in net.keys) / len(net.keys)
+        temp_D = D.Normal(means, scale)
+        z_kl = {
+            k: D.kl_divergence(
+                z[k], temp_D
+            ).sum(dim=1).mean() / x[k].shape[1]
+            for k in net.keys
+        }
+
+
+        cosk = {}
+        for i in range(len(net.keys)-1):
+            cosk[net.keys[i]] = zsamp[net.keys[i]] @ zsamp[net.keys[i+1]].T
+
+        cosk_p = {}
+        for i in range(len(net.keys) - 1):
+            cosk_p[net.keys[i]] = x_p[net.keys[i]] @ x_p[net.keys[i+1]].T
+        z_p_nll = {}
+        for i in range(len(net.keys)-1):
+            z_p_nll[net.keys[i]] = (cosk_p[net.keys[i]]-cosk[net.keys[i]]).pow_(2)
+
+        x_elbo = {
+            k: x_nll[k] + self.lam_kl * x_kl[k]
+            for k in net.keys
+        }
+        x_elbo_sum = sum(self.domain_weight[k] * x_elbo[k] for k in net.keys)
+        z_kl_sum = sum(self.domain_weight[k] * z_kl[k] for k in net.keys)
+        x_u1_nll_sum = sum(self.domain_weight[k] * x_u1_nll[k] for k in net.keys)
+        z_p_sum = sum(z_p_nll[k].sum(dim=1).mean() for k in net.keys[:-1])
+
+        vae_loss = self.lam_data * (x_elbo_sum+x_u1_nll_sum) + 0.05*z_kl_sum +0.05*z_p_sum
+
+
+
+        gen_loss = vae_loss - self.lam_align * (dsc_loss) - du_gen_loss_sum
+
+        losses = {
+            "dsc_loss": dsc_loss, "vae_loss": vae_loss, "gen_loss": gen_loss,
+
+        }
+        for k in net.keys:
+            losses.update({
+                f"x_{k}_nll": x_nll[k],
+                f"x_{k}_kl": x_kl[k],
+                f"x_{k}_elbo": x_elbo[k]
+            })
+        if net.u2c:
+            losses["sup_loss"] = sup_loss
+        return losses
+
+    def compute_losses_first(
+            self, data: DataTensors, epoch: int, dsc_only: bool = False
+    ) -> Mapping[str, torch.Tensor]:
+        net = self.net
+        x, xalt, xbch, xlbl, xdwt, xflag = data
+        x_p = {}
+        for k in net.keys:
+            x_p[k] = xalt[k][:,-50:]
+            xalt[k] = xalt[k][:, :-50]
+        u, z, l = {}, {}, {}
+        for k in net.keys:
+            u[k], l[k] = net.x2u[k](x[k], xalt[k], lazy_normalizer=dsc_only)
+        usamp = {k: u[k].rsample() for k in net.keys}
+
+        if self.normalize_u:
+            usamp = {k: F.normalize(usamp[k], dim=1) for k in net.keys}
+        prior = net.prior()
+
+        cosk = {}
+        for i in range(len(net.keys)-1):
+            cosk[net.keys[i]] = usamp[net.keys[i]] @ usamp[net.keys[i+1]].T
+
+        cosk_p = {}
+        for i in range(len(net.keys) - 1):
+            cosk_p[net.keys[i]] = x_p[net.keys[i]] @ x_p[net.keys[i+1]].T
+        x_p_nll = {}
+        for i in range(len(net.keys) - 1):
+            x_p_nll[net.keys[i]] = (cosk_p[net.keys[i]]-cosk[net.keys[i]]).pow_(2)
+
+        x_nll = {
+            k: -net.u2x[k](
+                usamp[k], xbch[k], l[k]
+            ).log_prob(x[k]).mean()
+            for k in net.keys
+        }
+        x_kl = {
+            k: D.kl_divergence(
+                u[k], prior
+            ).sum(dim=1).mean() / x[k].shape[1]
+            for k in net.keys
+        }
+
+        x_elbo = {
+            k: x_nll[k] + self.lam_kl * x_kl[k]
+            for k in net.keys
+        }
+        x_elbo_sum = sum(self.domain_weight[k] * x_elbo[k] for k in net.keys)
+        x_p_sum = sum(x_p_nll[k].sum(dim=1).mean() for k in net.keys[:-1])
+        vae_loss = self.lam_data * x_elbo_sum +0.0001*x_p_sum
+
+        gen_loss = vae_loss
+
+        losses = {
+            "dsc_loss": torch.tensor(0.0, device=self.net.device), "vae_loss": vae_loss, "gen_loss": gen_loss,
+
+        }
+        for k in net.keys:
+            losses.update({
+                f"x_{k}_nll": x_nll[k],
+                f"x_{k}_kl": x_kl[k],
+                f"x_{k}_elbo": x_elbo[k]
+            })
+        if net.u2c:
+            losses["sup_loss"] = torch.tensor(0.0, device=self.net.device)
+        return losses
+
+
+
     def train_step(
             self, engine: ignite.engine.Engine, data: List[torch.Tensor]
     ) -> Mapping[str, torch.Tensor]:
         self.net.train()
         data = self.format_data(data)
         epoch = engine.state.epoch
-        for i in range(0,4):
-
-            if self.freeze_u:
-                self.net.x2u.apply(freeze_running_stats)
-                self.net.du.apply(freeze_running_stats)
-            else:  # Discriminator step
+        if self.safe_burnin:
+            for i in range(2):
                 losses = self.compute_losses(data, epoch, dsc_only=True)
                 self.net.zero_grad(set_to_none=True)
                 losses["dsc_loss"].backward()  # Already scaled by lam_align
                 self.dsc_optim.step()
 
-        for i in range(0, 1):
             # Generator step
             losses = self.compute_losses(data, epoch)
             self.net.zero_grad(set_to_none=True)
             losses["gen_loss"].backward()
             self.vae_optim.step()
-
-        return losses
+            return losses
+        else:
+            losses = self.compute_losses_first(data, epoch)
+            self.net.zero_grad(set_to_none=True)
+            losses["gen_loss"].backward()
+            self.vae_optim.step()
+            return losses
 
     def __repr__(self):
         vae_optim = repr(self.vae_optim).replace("    ", "  ").replace("\n", "\n  ")
@@ -686,7 +881,7 @@ class SCCROSSTrainer(CROSSTrainer):
             f")"
         )
 
-#from sklearn.neighbors import kneighbors_graph
+
 import scanpy
 import gc
 import itertools
@@ -883,12 +1078,14 @@ class AnnDataset1(Dataset):
         else:
             return main
 
+
 #--------------------------------- Public API ----------------------------------
 
 @logged
 def configure_dataset(
         adata: AnnData, prob_model: str,
         use_highly_variable: bool = True,
+        use_gs: bool = True,
         use_layer: Optional[str] = None,
         use_rep: Optional[str] = None,
         use_batch: Optional[str] = None,
@@ -947,8 +1144,10 @@ def configure_dataset(
         if use_layer not in adata.layers:
             raise ValueError("Invalid `use_layer`!")
         data_config["use_layer"] = use_layer
+        adata.layers[use_layer][adata.layers[use_layer]<0] = 0
     else:
         data_config["use_layer"] = None
+        adata.X[adata.X<0] = 0
     if use_rep:
         if use_rep not in adata.obsm:
             raise ValueError("Invalid `use_rep`!")
@@ -990,32 +1189,28 @@ def configure_dataset(
     else:
         data_config["use_uid"] = None
     adata.uns[config.ANNDATA_KEY] = data_config
-
-    scanpy.pp.neighbors(adata, key_added='gcn',use_rep=use_rep,n_neighbors=10)
+    scanpy.pp.neighbors(adata, key_added='gcn',use_rep=use_rep,n_neighbors=20)
 
     adj_adata = adata.obsp['gcn_connectivities']
     adj_adata = normalize_sparse(adj_adata)
 
     adj_adata.setdiag(1)
-    #adj_adata = normalize_sparse(adj_adata)
-
-
-    # adj_adata = kneighbors_graph(adata.obsm[use_rep], 10, mode='connectivity', include_self=True)
-    # row, col = np.diag_indices_from(adj_adata)
-    # adj_adata[row, col] = 2
-    # adj_adata = normalize_sparse(adj_adata)
-
-
-
 
     adata.obsm[use_rep] = adj_adata* adata.obsm[use_rep]
 
-    if use_rep == 'X_pca':
-        #scanpy.pp.highly_variable_genes(adata)
-        expression_only = AnnDataset1(adata, label_name='labels')
+
+    if use_gs:
+        # scanpy.pp.highly_variable_genes(adata)
+
+        gene = adata
+        if adata.obs['domain'][0] != 'scRNA-seq':
+            gene = adata.uns['gene']
+            gene.obs['cell_type'] = adata.obs['cell_type']
+
+        expression_only = AnnDataset1(gene, label_name='cell_type')
         genes_upper = expression_only.genes_upper
         prior_name = "c5.go.bp.v7.4.symbols.gmt+c2.cp.v7.4.symbols.gmt+TF-DNA"
-        gene_sets_path = "../../gene_sets/"
+        gene_sets_path = "./gene_sets/"
         if '+' in prior_name:
             prior_names_list = prior_name.split('+')
 
@@ -1036,54 +1231,12 @@ def configure_dataset(
         else:
             gene_set_matrix, keys_all = getGeneSetMatrix(prior_name, genes_upper, gene_sets_path)
 
-        gene_Set_m = (adata.X).dot(gene_set_matrix.T)
+        gene_Set_m = (gene.X).dot(gene_set_matrix.T)
         temp = AnnData(gene_Set_m)
 
-
-        scanpy.pp.pca(temp,n_comps=50)
-        adata.obsm[use_rep] = np.concatenate((adata.obsm[use_rep],temp.obsm['X_pca']),axis=1)
+        scanpy.tl.pca(temp, n_comps=5)
+        adata.obsm[use_rep] = np.concatenate((adata.obsm[use_rep], temp.obsm['X_pca']), axis=1)
         data_config["rep_dim"] = adata.obsm[use_rep].shape[1]
-        print('rep_dim: '+str(data_config["rep_dim"]))
-
-
-    if use_rep == 'X_lsi':
-        #scanpy.pp.highly_variable_genes(adata)
-        gene = adata.uns['gene']
-        gene.obs['labels'] = adata.obs['labels']
-        expression_only = AnnDataset1(gene, label_name='labels')
-        genes_upper = expression_only.genes_upper
-        prior_name = "c5.go.bp.v7.4.symbols.gmt+c2.cp.v7.4.symbols.gmt+TF-DNA"
-        gene_sets_path = "../../gene_sets/"
-        if '+' in prior_name:
-            prior_names_list = prior_name.split('+')
-
-            _matrix_list = []
-            _keys_list = []
-            for _name in prior_names_list:
-                _matrix, _keys = getGeneSetMatrix(_name, genes_upper, gene_sets_path)
-                _matrix_list.append(_matrix)
-                _keys_list.append(_keys)
-
-            gene_set_matrix = np.concatenate(_matrix_list, axis=0)
-            keys_all = list(itertools.chain(*_keys_list))
-
-            del _matrix_list
-            del _keys_list
-            gc.collect()
-
-        else:
-            gene_set_matrix, keys_all = getGeneSetMatrix(prior_name, genes_upper, gene_sets_path)
-
-        gene_Set_m = (adata.X).dot(gene_set_matrix.T)
-        temp = AnnData(gene_Set_m)
-
-
-        scanpy.pp.pca(temp,n_comps=50)
-        adata.obsm[use_rep] = np.concatenate((adata.obsm[use_rep],temp.obsm['X_pca']),axis=1)
-        data_config["rep_dim"] = adata.obsm[use_rep].shape[1]
-        #print('rep_dim: '+str(data_config["rep_dim"]))
-
-
 
 
 @logged
@@ -1440,6 +1593,7 @@ class SCCROSSModel(Model):
         )
         result = []
         for x, xalt, *_ in data_loader:
+            xalt = xalt[:,:-50]
             u = encoder(
                 x.to(self.net.device, non_blocking=True),
                 xalt.to(self.net.device, non_blocking=True),
@@ -1455,77 +1609,6 @@ class SCCROSSModel(Model):
         return torch.cat(result).numpy()
 
 
-    @torch.no_grad()
-    def generate_cross_old(
-            self, key1: str,key2: str, adata: AnnData, batch_size: int = 128,
-            n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        r"""
-        Compute data (cell) embedding
-
-        Parameters
-        ----------
-        key
-            Domain key
-        adata
-            Input dataset
-        batch_size
-            Size of minibatches
-        n_sample
-            Number of samples from the embedding distribution,
-            by default ``None``, returns the mean of the embedding distribution.
-
-        Returns
-        -------
-        data_embedding
-            Data (cell) embedding
-            with shape :math:`n_{cell} \times n_{dim}`
-            if ``n_sample`` is ``None``,
-            or shape :math:`n_{cell} \times n_{sample} \times n_{dim}`
-            if ``n_sample`` is not ``None``.
-        """
-        self.net.eval()
-        encoder = self.net.x2u[key1]
-
-        u2z = self.net.u2z[key1]
-        z2u = self.net.z2u[key2]
-        u2x = self.net.u2x[key2]
-        data = AnnDataset(
-            [adata], [self.domains[key1]],
-            mode="eval", getitem_size=batch_size
-        )
-
-        data_loader = DataLoader(
-            data, batch_size=1, shuffle=False,
-            num_workers=config.DATALOADER_NUM_WORKERS,
-            pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
-            persistent_workers=False
-        )
-
-
-        result = []
-        for x, xalt, *_ in data_loader:
-            u,l = encoder(
-                x.to(self.net.device, non_blocking=True),
-                xalt.to(self.net.device, non_blocking=True),
-                lazy_normalizer=True
-            )
-
-
-            #us = u.sample()
-            z = u2z(u.mean)
-            u1 = z2u(z.mean)
-            b = np.zeros(adata.shape[0], dtype=int)
-            #l = torch.Tensor(np.zeros(l.shape, dtype=int))
-
-            u1samp = u1.sample()
-            x_out = u2x(u1samp,b,l)
-            if n_sample:
-                result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            else:
-                result.append(x_out.mean.detach().cpu())
-
-        return torch.cat(result).numpy()
 
 
 
@@ -1593,58 +1676,148 @@ class SCCROSSModel(Model):
         l_other = torch.Tensor().cuda()
 
         for x, xalt, *_ in data_loader_other:
+            xalt = xalt[:,:-50]
             u_other,l_other_1 = encoder_other(
                 x.to(self.net.device, non_blocking=True),
                 xalt.to(self.net.device, non_blocking=True),
                 lazy_normalizer=True
             )
             l_other = torch.cat((l_other, l_other_1))
-            #
-            b = np.zeros(len(l_other_1), dtype=int)
-            #l = torch.Tensor(np.zeros(l.shape, dtype=int))
 
-            #print(l)
-            #
-            usamp_other = u_other.rsample()
-            # #usamp = u.rsample()
-            x_out_other = u2x(usamp_other, b, l_other_1)
-            # # if n_sample:
-            # #     result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            # # else:
-            # #     result.append(x_out.mean.detach().cpu())
-            #result_other.append(x_out_other.sample().cpu())
             result_other.append(x.cpu())
-        #print(l_other)
+
         l_other = torch.mean(l_other)
-        #print(l_other)
+
 
         for x, xalt, *_ in data_loader:
-
+            xalt = xalt[:,:-50]
             u,l = encoder(
                 x.to(self.net.device, non_blocking=True),
                 xalt.to(self.net.device, non_blocking=True),
                 lazy_normalizer=True
             )
 
-            # us = u.sample()
             z = u2z(u.mean)
             u1 = z2u(z.mean)
             b = np.zeros(len(l), dtype=int)
-            # l = torch.Tensor(np.zeros(l.shape, dtype=int))
             l = l/torch.mean(l)*l_other
 
-            #print(l)
 
             u1samp = u1.rsample()
-            #usamp = u.rsample()
             x_out = u2x(u1samp, b, l)
-            # if n_sample:
-            #     result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            # else:
-            #     result.append(x_out.mean.detach().cpu())
+
             result.append(x_out.sample().cpu())
 
         return torch.cat(result).numpy(),torch.cat(result_other).numpy()
+
+    @torch.no_grad()
+    def generate_batch(
+            self, adatas: Mapping[str, AnnData],obs_from:str,name:str,num:int
+    ):
+        r"""
+        Compute data (cell) embedding
+
+        Parameters
+        ----------
+        key
+            Domain key
+        adata
+            Input dataset
+        batch_size
+            Size of minibatches
+        n_sample
+            Number of samples from the embedding distribution,
+            by default ``None``, returns the mean of the embedding distribution.
+
+        Returns
+        -------
+        data_embedding
+            Data (cell) embedding
+            with shape :math:`n_{cell} \times n_{dim}`
+            if ``n_sample`` is ``None``,
+            or shape :math:`n_{cell} \times n_{sample} \times n_{dim}`
+            if ``n_sample`` is not ``None``.
+        """
+        self.net.eval()
+
+        l_s = []
+        z_s = torch.Tensor()
+
+        for key,adata in adatas.items():
+            x2u = self.net.x2u[key]
+            u2z = self.net.u2z[key]
+            adata_sub = adata[adata.obs[obs_from].isin([name])]
+            data = AnnDataset(
+                [adata_sub], [self.domains[key]],
+                 mode="eval", getitem_size=len(adata_sub.obs)
+            )
+            data_loader = DataLoader(
+                data, batch_size=1, shuffle=False,
+                num_workers=config.DATALOADER_NUM_WORKERS,
+                pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
+                persistent_workers=False
+            )
+
+            l_s_t = []
+
+
+            for x, xalt, *_ in data_loader:
+                xalt = xalt[:, :-50]
+
+                u, l = x2u(
+                    x.to(self.net.device, non_blocking=True),
+                    xalt.to(self.net.device, non_blocking=True),
+                    lazy_normalizer=True
+                )
+                z = u2z(u.mean)
+
+                l = torch.mean(l.cpu())
+
+
+                z_t = torch.mean(z.mean,dim=0,keepdim=True)
+
+                l_s_t.append(l)
+                z_s = torch.cat((z_s, z_t))
+
+            l_s.append(np.mean(l_s_t))
+
+        z_s_m = torch.mean(z_s,dim=0,keepdim=True)
+
+        g = 0
+        result_s = []
+
+        for key,adata in adatas.items():
+            z2u = self.net.z2u[key]
+            u2x = self.net.u2x[key]
+
+            u = z2u(z_s_m)
+            l = l_s[g]
+            b = 0
+            g = g+1
+            result = []
+
+            for i in range(num):
+                u1samp = u.rsample()
+                x_out = u2x(u1samp, b, l)
+                result.append(x_out.sample().cpu())
+
+            result = torch.cat(result).numpy()
+            adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
+            result_a = scanpy.AnnData(result,var=adata_s.var)
+            #result_a.obs[obs_from] = name
+            result_s.append(result_a)
+
+        return result_s
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1716,22 +1889,12 @@ class SCCROSSModel(Model):
                 lazy_normalizer=True
             )
 
-            # us = u.sample()
             z = u2z(u.mean)
             u1 = z2u(z.mean)
             b = np.zeros(len(l), dtype=int)
-            # l = torch.Tensor(np.zeros(l.shape, dtype=int))
             l = l/torch.mean(l)*l
-
-            #print(l)
-
             u1samp = u1.rsample()
-            #usamp = u.rsample()
             x_out = u2x(u1samp, b, l)
-            # if n_sample:
-            #     result.append(x_out.sample((n_sample,)).cpu().permute(1, 0, 2))
-            # else:
-            #     result.append(x_out.mean.detach().cpu())
             result.append(x_out.sample().cpu())
             result_other.append(x.cpu())
 
@@ -1741,151 +1904,7 @@ class SCCROSSModel(Model):
 
 
 
-    @torch.no_grad()
-    def encode_data1(
-            self, key: str, adata: AnnData, batch_size: int = 128,
-            n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-        r"""
-        Compute data (cell) embedding
 
-        Parameters
-        ----------
-        key
-            Domain key
-        adata
-            Input dataset
-        batch_size
-            Size of minibatches
-        n_sample
-            Number of samples from the embedding distribution,
-            by default ``None``, returns the mean of the embedding distribution.
-
-        Returns
-        -------
-        data_embedding
-            Data (cell) embedding
-            with shape :math:`n_{cell} \times n_{dim}`
-            if ``n_sample`` is ``None``,
-            or shape :math:`n_{cell} \times n_{sample} \times n_{dim}`
-            if ``n_sample`` is not ``None``.
-        """
-        self.net.eval()
-        encoder = self.net.x2u[key]
-        data = AnnDataset(
-            [adata], [self.domains[key]],
-            mode="eval", getitem_size=batch_size
-        )
-        data_loader = DataLoader(
-            data, batch_size=1, shuffle=False,
-            num_workers=config.DATALOADER_NUM_WORKERS,
-            pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
-            persistent_workers=False
-        )
-        result = []
-        for x, xalt, *_ in data_loader:
-            u = encoder(
-                x.to(self.net.device, non_blocking=True),
-                xalt.to(self.net.device, non_blocking=True),
-                lazy_normalizer=True
-            )[0]
-            if n_sample:
-                result.append(u.sample((n_sample,)).cpu().permute(1, 0, 2))
-            else:
-                result.append(u.mean.detach().cpu())
-        return torch.cat(result).numpy()
-
-    # @torch.no_grad()
-    # def decode_data(
-    #         self, source_key: str, target_key: str,
-    #         adata: AnnData, graph: nx.Graph,
-    #         edge_weight: str = "weight", edge_sign: str = "sign",
-    #         target_libsize: Optional[Union[float, np.ndarray]] = None,
-    #         target_batch: Optional[np.ndarray] = None,
-    #         batch_size: int = 128
-    # ) -> np.ndarray:
-    #     r"""
-    #     Decode data
-    #
-    #     Parameters
-    #     ----------
-    #     source_key
-    #         Source domain key
-    #     target_key
-    #         Target domain key
-    #     adata
-    #         Source domain data
-    #     graph
-    #         Prior graph
-    #     edge_weight
-    #         Key of edge attribute for edge weight
-    #     edge_sign
-    #         Key of edge attribute for edge sign
-    #     target_libsize
-    #         Target domain library size, by default 1.0
-    #     target_batch
-    #         Target domain batch, by default batch 0
-    #     batch_size
-    #         Size of minibatches
-    #
-    #     Returns
-    #     -------
-    #     decoded
-    #         Decoded data
-    #
-    #     Note
-    #     ----
-    #     This is EXPERIMENTAL!
-    #     """
-    #     l = target_libsize or 1.0
-    #     if not isinstance(l, np.ndarray):
-    #         l = np.asarray(l)
-    #     l = l.squeeze()
-    #     if l.ndim == 0:  # Scalar
-    #         l = l[np.newaxis]
-    #     elif l.ndim > 1:
-    #         raise ValueError("`target_libsize` cannot be >1 dimensional")
-    #     if l.size == 1:
-    #         l = np.repeat(l, adata.shape[0])
-    #     if l.size != adata.shape[0]:
-    #         raise ValueError("`target_libsize` must have the same size as `adata`!")
-    #     l = l.reshape((-1, 1))
-    #
-    #     use_batch = self.domains[target_key]["use_batch"]
-    #     batches = self.domains[target_key]["batches"]
-    #     if use_batch and target_batch is not None:
-    #         target_batch = np.asarray(target_batch)
-    #         if target_batch.size != adata.shape[0]:
-    #             raise ValueError("`target_batch` must have the same size as `adata`!")
-    #         b = batches.get_indexer(target_batch)
-    #     else:
-    #         b = np.zeros(adata.shape[0], dtype=int)
-    #
-    #     net = self.net
-    #     device = net.device
-    #     net.eval()
-    #
-    #     u = self.encode_data(source_key, adata, batch_size=batch_size)
-    #     v = self.encode_graph(graph, edge_weight=edge_weight, edge_sign=edge_sign)
-    #     v = torch.as_tensor(v, device=device)
-    #     v = v[getattr(net, f"{target_key}_idx")]
-    #
-    #     data = ArrayDataset(u, b, l, getitem_size=batch_size)
-    #     data_loader = DataLoader(
-    #         data, batch_size=1, shuffle=False,
-    #         num_workers=config.DATALOADER_NUM_WORKERS,
-    #         pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
-    #         persistent_workers=False
-    #     )
-    #     decoder = net.u2x[target_key]
-    #
-    #     result = []
-    #     for u_, b_, l_ in data_loader:
-    #         u_ = u_.to(device, non_blocking=True)
-    #         b_ = b_.to(device, non_blocking=True)
-    #         l_ = l_.to(device, non_blocking=True)
-    #         result.append(decoder(u_, v, b_, l_).mean.detach().cpu())
-    #     return torch.cat(result).numpy()
 
     def __repr__(self) -> str:
         return (
@@ -1893,6 +1912,5 @@ class SCCROSSModel(Model):
             f"{repr(self.net)}\n\n"
             f"{repr(self.trainer)}\n"
         )
-
 
 

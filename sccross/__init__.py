@@ -5,7 +5,7 @@ except ModuleNotFoundError:
     from pkg_resources import get_distribution
     version = lambda name: get_distribution(name).version
 
-from . import data, genomics, graph, models, num, plot
+from . import data,  models, num, plot, metrics
 from .utils import config, log
 
 

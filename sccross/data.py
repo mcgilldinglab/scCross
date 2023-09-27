@@ -13,6 +13,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import episcanpy as epi
 import scipy.sparse
 import scipy.stats
 import sklearn.cluster
@@ -26,7 +27,7 @@ from networkx.algorithms.bipartite import biadjacency_matrix
 from sklearn.preprocessing import normalize
 from sparse import COO
 
-from . import genomics, num
+from . import num
 from .typehint import Kws
 from .utils import logged, smart_tqdm
 
@@ -64,54 +65,62 @@ def lsi(
     adata.obsm["X_lsi"] = X_lsi
 
 
-@logged
-def get_gene_annotation(
-        adata: AnnData, var_by: str = None,
-        gtf: os.PathLike = None, gtf_by: str = None,
-        by_func: Optional[Callable] = None
+
+def mnn_prior(
+        adatas: [AnnData]
+
 ) -> None:
-    r"""
-    Get genomic annotation of genes by joining with a GTF file.
+    common_genes = set()
+    for i in range(len(adatas)):
+        adata_i = adatas[i].var.index.values
+        atac_i_1 = []
+        for g in adata_i:
+            g = g.split('-')[0]
+            atac_i_1.append(g)
 
-    Parameters
-    ----------
-    adata
-        Input dataset
-    var_by
-        Specify a column in ``adata.var`` used to merge with GTF attributes,
-        otherwise ``adata.var_names`` is used by default.
-    gtf
-        Path to the GTF file
-    gtf_by
-        Specify a field in the GTF attributes used to merge with ``adata.var``,
-        e.g. "gene_id", "gene_name".
-    by_func
-        Specify an element-wise function used to transform merging fields,
-        e.g. removing suffix in gene IDs.
+        adatas[i].var.index = atac_i_1
+        adatas[i].var_names_make_unique()
+        if len(common_genes) == 0:
+            common_genes = set(adatas[i].var.index.values)
+        else:
+            common_genes &= set(adatas[i].var.index.values)
 
-    Note
-    ----
-    The genomic locations are converted to 0-based as specified
-    in bed format rather than 1-based as specified in GTF format.
-    """
-    if gtf is None:
-        raise ValueError("Missing required argument `gtf`!")
-    if gtf_by is None:
-        raise ValueError("Missing required argument `gtf_by`!")
-    var_by = adata.var_names if var_by is None else adata.var[var_by]
-    gtf = genomics.read_gtf(gtf).query("feature == 'gene'").split_attribute()
-    if by_func:
-        by_func = np.vectorize(by_func)
-        var_by = by_func(var_by)
-        gtf[gtf_by] = by_func(gtf[gtf_by])  # Safe inplace modification
-    gtf = gtf.sort_values("seqname").drop_duplicates(
-        subset=[gtf_by], keep="last"
-    )  # Typically, scaffolds come first, chromosomes come last
-    merge_df = pd.concat([
-        pd.DataFrame(gtf.to_bed(name=gtf_by)),
-        pd.DataFrame(gtf).drop(columns=genomics.Gtf.COLUMNS)  # Only use the splitted attributes
-    ], axis=1).set_index(gtf_by).reindex(var_by).set_index(adata.var.index)
-    adata.var = pd.concat([adata.var, merge_df], axis=1)
+    for i in range(len(adatas)):
+        adatas[i] = adatas[i][:, common_genes]
+
+    adatas_mnn = sc.external.pp.mnn_correct(adatas, k=20)
+    sc.tl.pca(adatas_mnn, n_comps=50)
+    for i in range(len(adatas)):
+        adata_temp = adatas_mnn[adatas_mnn.obs['batch'].isin([str(i)])]
+        if adatas[i].obs['domain'] == 'scATAC-seq':
+            adatas[i].obsm['X_lsi'] = np.concatenate((adatas[i].obsm['X_lsi'], adata_temp.obsm['X_pca']), axis=1)
+        else:
+            adatas[i].obsm['X_pca'] = np.concatenate((adatas[i].obsm['X_pca'], adata_temp.obsm['X_pca']), axis=1)
+
+def geneActivity(
+        adata: AnnData,gtf_file = './reference/gencode.vM30.annotation.gtf',key_added='gene',
+                                upstream=2000,
+                                feature_type='transcript',
+                                annotation='HAVANA',
+                                raw=False
+
+) -> AnnData:
+    geneAct = epi.tl.geneactivity(adata,
+                                gtf_file=gtf_file,
+                                key_added=key_added,
+                                upstream=upstream,
+                                feature_type=feature_type,
+                                annotation=annotation,
+                                raw=raw)
+    return geneAct
+
+
+
+
+
+
+
+
 
 
 def aggregate_obs(
@@ -197,47 +206,6 @@ def aggregate_obs(
     )
 
 
-def transfer_labels(
-        ref: AnnData, query: AnnData, field: str,
-        n_neighbors: int = 5, use_rep: Optional[str] = None,
-        key_added: Optional[str] = None, **kwargs
-) -> None:
-    r"""
-    Transfer discrete labels from reference dataset to query dataset
-
-    Parameters
-    ----------
-    ref
-        Reference dataset
-    query
-        Query dataset
-    field
-        Field to be transferred in ``ref.obs`` (must be discrete)
-    n_neighbors
-        Number of nearest neighbors used for label transfer
-    use_rep
-        Data representation based on which to find nearest neighbors,
-        by default uses ``{ref, query}.X``.
-    key_added
-        New ``query.obs`` key added for the transfered labels,
-        by default the same as ``field``.
-    **kwargs
-        Additional keyword arguments are passed to
-        :class:`sklearn.neighbors.NearestNeighbors`
-    """
-    ref_mat = ref.obsm[use_rep] if use_rep else ref.X
-    query_mat = query.obsm[use_rep] if use_rep else query.X
-    nn = sklearn.neighbors.NearestNeighbors(
-        n_neighbors=n_neighbors, **kwargs
-    ).fit(ref_mat)
-    nni = nn.kneighbors(query_mat, return_distance=False)
-    hits = ref.obs[field].to_numpy()[nni]
-    pred = pd.crosstab(
-        np.repeat(query.obs_names, n_neighbors), hits.ravel()
-    ).idxmax(axis=1).loc[query.obs_names]
-    if pd.api.types.is_categorical_dtype(ref.obs[field]):
-        pred = pd.Categorical(pred, categories=ref.obs[field].cat.categories)
-    query.obs[key_added or field] = pred
 
 
 def extract_rank_genes_groups(
@@ -297,163 +265,7 @@ def extract_rank_genes_groups(
     return df
 
 
-def bedmap2anndata(
-        bedmap: os.PathLike, var_col: int = 3, obs_col: int = 6
-) -> AnnData:
-    r"""
-    Convert bedmap result to :class:`anndata.AnnData` object
 
-    Parameters
-    ----------
-    bedmap
-        Path to bedmap result
-    var_col
-        Variable column (0-based)
-    obs_col
-        Observation column (0-based)
-
-    Returns
-    -------
-    adata
-        Converted :class:`anndata.AnnData` object
-
-    Note
-    ----
-    Similar to ``rliger::makeFeatureMatrix``,
-    but more automated and memory efficient.
-    """
-    bedmap = pd.read_table(bedmap, sep="\t", header=None, usecols=[var_col, obs_col])
-    var_names = pd.Index(sorted(set(bedmap[var_col])))
-    bedmap = bedmap.dropna()
-    var_pool = bedmap[var_col]
-    obs_pool = bedmap[obs_col].str.split(";")
-    obs_names = pd.Index(sorted(set(chain.from_iterable(obs_pool))))
-    X = scipy.sparse.lil_matrix((var_names.size, obs_names.size))  # Transposed
-    for obs, var in smart_tqdm(zip(obs_pool, var_pool), total=bedmap.shape[0]):
-        row = obs_names.get_indexer(obs)
-        col = var_names.get_loc(var)
-        X.rows[col] += row.tolist()
-        X.data[col] += [1] * row.size
-    X = X.tocsc().T  # Transpose back
-    X.sum_duplicates()
-    return AnnData(
-        X=X, obs=pd.DataFrame(index=obs_names),
-        var=pd.DataFrame(index=var_names)
-    )
-
-
-@logged
-def estimate_balancing_weight(
-        *adatas: AnnData, use_rep: str = None, use_batch: Optional[str] = None,
-        resolution: float = 1.0, cutoff: float = 0.5, power: float = 4.0,
-        key_added: str = "balancing_weight"
-) -> None:
-    r"""
-    Estimate balancing weights in an unsupervised manner
-
-    Parameters
-    ----------
-    *adatas
-        Datasets to be balanced
-    use_rep
-        Data representation based on which to match clusters
-    use_batch
-        Estimate balancing per batch
-        (batch keys and categories must match across all datasets)
-    resolution
-        Leiden clustering resolution
-    cutoff
-        Cosine similarity cutoff
-    power
-        Cosine similarity power (for increasing contrast)
-    key_added
-        New ``obs`` key added for the balancing weight
-
-    Note
-    ----
-    While the joint similarity array would have a size of :math:`K^n`
-    (where :math:`K` is the average number of clusters per dataset,
-    and :math:`n` is the number of datasets), a sparse implementation
-    was used, so the scalability regarding dataset number should be good.
-    """
-    if use_batch:  # Recurse per batch
-        estimate_balancing_weight.logger.info("Splitting batches...")
-        adatas_per_batch = defaultdict(list)
-        for adata in adatas:
-            groupby = adata.obs.groupby(use_batch, dropna=False)
-            for b, idx in groupby.indices.items():
-                adatas_per_batch[b].append(adata[idx])
-        if len(set(len(items) for items in adatas_per_batch.values())) != 1:
-            raise ValueError("Batches must match across datasets!")
-        for b, items in adatas_per_batch.items():
-            estimate_balancing_weight.logger.info("Processing batch %s...", b)
-            estimate_balancing_weight(
-                *items, use_rep=use_rep, use_batch=None,
-                resolution=resolution, cutoff=cutoff,
-                power=power, key_added=key_added
-            )
-        estimate_balancing_weight.logger.info("Collating batches...")
-        collates = [
-            pd.concat([item.obs[key_added] for item in items])
-            for items in zip(*adatas_per_batch.values())
-        ]
-        for adata, collate in zip(adatas, collates):
-            adata.obs[key_added] = collate.loc[adata.obs_names]
-        return
-
-    if use_rep is None:
-        raise ValueError("Missing required argument `use_rep`!")
-    adatas_ = [
-        AnnData(
-            obs=adata.obs.copy(deep=False).assign(n=1),
-            obsm={use_rep: adata.obsm[use_rep]}
-        ) for adata in adatas
-    ]  # Avoid unwanted updates to the input objects
-
-    estimate_balancing_weight.logger.info("Clustering cells...")
-    for adata_ in adatas_:
-        sc.pp.neighbors(
-            adata_, n_pcs=adata_.obsm[use_rep].shape[1],
-            use_rep=use_rep, metric="cosine"
-        )
-        sc.tl.leiden(adata_, resolution=resolution)
-
-    leidens = [
-        aggregate_obs(
-            adata, by="leiden", X_agg=None,
-            obs_agg={"n": "sum"}, obsm_agg={use_rep: "mean"}
-        ) for adata in adatas_
-    ]
-    us = [normalize(leiden.obsm[use_rep], norm="l2") for leiden in leidens]
-    ns = [leiden.obs["n"] for leiden in leidens]
-
-    estimate_balancing_weight.logger.info("Matching clusters...")
-    cosines = []
-    for i, ui in enumerate(us):
-        for j, uj in enumerate(us[i + 1:], start=i + 1):
-            cosine = ui @ uj.T
-            cosine[cosine < cutoff] = 0
-            cosine = COO.from_numpy(cosine)
-            cosine = np.power(cosine, power)
-            key = tuple(
-                slice(None) if k in (i, j) else np.newaxis
-                for k in range(len(us))
-            )  # To align axes
-            cosines.append(cosine[key])
-    joint_cosine = num.prod(cosines)
-    estimate_balancing_weight.logger.info(
-        "Matching array shape = %s...", str(joint_cosine.shape)
-    )
-
-    estimate_balancing_weight.logger.info("Estimating balancing weight...")
-    for i, (adata, adata_, leiden, n) in enumerate(zip(adatas, adatas_, leidens, ns)):
-        balancing = joint_cosine.sum(axis=tuple(
-            k for k in range(joint_cosine.ndim) if k != i
-        )).todense() / n
-        balancing = pd.Series(balancing, index=leiden.obs_names)
-        balancing = balancing.loc[adata_.obs["leiden"]].to_numpy()
-        balancing /= balancing.sum() / balancing.size
-        adata.obs[key_added] = balancing
 
 
 @logged

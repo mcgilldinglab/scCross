@@ -5,16 +5,16 @@ Integration models
 import os
 from typing import Mapping
 
-import networkx as nx
+
 import numpy as np
 from anndata import AnnData
 
-from ..data import estimate_balancing_weight
+
 from ..typehint import Kws
 from ..utils import config, logged
 from .base import Model
 from .dx import integration_consistency
-
+from .sccross import SCCROSSModel
 from .sccross import (AUTO, SCCROSSModel,
                      configure_dataset)
 
@@ -41,7 +41,6 @@ def fit_SCCROSS(
     init_kws = init_kws or {}
     compile_kws = compile_kws or {}
     fit_kws = fit_kws or {}
-    balance_kws = balance_kws or {}
 
     fit_SCCROSS.logger.info("Pretraining SCCROSS model...")
     pretrain_init_kws = init_kws.copy()
@@ -58,24 +57,6 @@ def fit_SCCROSS(
     if "directory" in pretrain_fit_kws:
         pretrain.save(os.path.join(pretrain_fit_kws["directory"], "pretrain.dill"))
 
-    fit_SCCROSS.logger.info("Estimating balancing weight...")
-    for k, adata in adatas.items():
-        adata.obsm[f"X_{config.TMP_PREFIX}"] = pretrain.encode_data(k, adata)
-    if init_kws.get("shared_batches"):
-        use_batch = set(
-            adata.uns[config.ANNDATA_KEY]["use_batch"]
-            for adata in adatas.values()
-        )
-        use_batch = use_batch.pop() if len(use_batch) == 1 else None
-    else:
-        use_batch = None
-    estimate_balancing_weight(
-        *adatas.values(), use_rep=f"X_{config.TMP_PREFIX}", use_batch=use_batch,
-        key_added="balancing_weight", **balance_kws
-    )
-    for adata in adatas.values():
-        adata.uns[config.ANNDATA_KEY]["use_dsc_weight"] = "balancing_weight"
-        del adata.obsm[f"X_{config.TMP_PREFIX}"]
 
     fit_SCCROSS.logger.info("Fine-tuning SCCROSS model...")
     finetune_fit_kws = fit_kws.copy()
