@@ -26,18 +26,4 @@ pip3 install git+https://github.com/mcgilldinglab/scCross
 ```
 
 ## Tutorial:
-### Data preprocessing
-* [Data preprocessing](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/data_preprocessing/preprocessing.ipynb)
-
-### Training scCross on matched mouse brain dataset
-* [Matched mouse brain dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_brain.ipynb)
-### Training scCross on unmatched mouse brain dataset
-* [Unmatched mouse brain dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_unmatched_mouse_brain.ipynb)
-### Training scCross on matched mouse blood dataset
-* [Matched mouse blood dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_blood.ipynb)
-### Training scCross on matched mouse lymph node dataset
-* [Matched mouse lymph node dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/benchmark/training_matched_mouse_lymnode.ipynb)
-### Training scCross on human cell atlas dataset
-* [Human cell atlas dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/training_human_cell_atlas.ipynb)
-### Training scCross on COVID-19 dataset
-* [COVID-19 dataset](https://github.com/mcgilldinglab/scCross/blob/main/tutorial/training_COVID-19.ipynb)
+* [scCross Documents](https://sccross.readthedocs.io/en/latest/index.html)
