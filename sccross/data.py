@@ -73,6 +73,15 @@ def mnn_prior(
         adatas: [AnnData]
 
 ) -> None:
+    r"""
+        MNN prior generation
+
+        Parameters
+        ----------
+        adatas
+            Input dataset
+
+    """
 
     adatas_modify = adatas.copy()
 
@@ -111,16 +120,42 @@ def mnn_prior(
             adatas[i].obsm['X_pca'] = np.concatenate((adatas[i].obsm['X_pca'], adata_temp.obsm['X_pca']), axis=1)
 
 def geneActivity(
-        adata: AnnData,gtf_file = './reference/gencode.vM30.annotation.gtf',key_added='gene',
+        adata: AnnData,gtf_file = './reference/gencode.vM30.annotation.gtf',
                                 upstream=2000,
                                 feature_type='transcript',
                                 annotation='HAVANA',
                                 raw=False
 
 ) -> AnnData:
+    r"""
+        Gene activity score calculation
+
+
+        Parameters
+        ----------
+        adata
+            Input dataset
+        gtf_file
+            GTF reference path
+        upstream
+            upstream finding
+        feature_type
+            feature type
+        annotation
+            annotation type
+        raw
+            raw data or not
+
+        Returns
+        -------
+        AnnData
+            Gene activity score data
+            with shape :math:`n_{cell} \times n_{gene}`
+    """
+
     geneAct = epi.tl.geneactivity(adata,
                                 gtf_file=gtf_file,
-                                key_added=key_added,
+                                key_added='gene',
                                 upstream=upstream,
                                 feature_type=feature_type,
                                 annotation=annotation,
