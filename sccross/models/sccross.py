@@ -2088,7 +2088,7 @@ class SCCROSSModel(Model):
 
     @torch.no_grad()
     def perturbation_difGenes(
-            self, key: str, adata: AnnData,  obs_key: str, perturb_key: str, reference_key: str, high_variable: bool = True, use_rep: str = 'X_pca', rep_dim: int = 100
+            self, key: str, adata: AnnData,  obs_key: str, perturb_key: str, reference_key: str, genes: [], use_rep: str = 'X_pca', rep_dim: int = 100
 
     ) -> pd.DataFrame:
         r"""
@@ -2106,8 +2106,8 @@ class SCCROSSModel(Model):
                     Name of cells we would like to perturb
                 reference_key
                     Name of cells we regard as reference
-                high_variable
-                    Use highly variable genes or not
+                genes
+                    Genes we would like to perturb
                 use_rep
                     Name of representation used by this data
                 rep_dim
@@ -2140,14 +2140,10 @@ class SCCROSSModel(Model):
             adata[adata.obs[obs_key] == reference_key].obsm["X_cross"],
         )
         cos_o = cos_o.mean()
-        genes = []
 
 
 
-        if high_variable:
-            genes = list(adata.var.index[adata.var['highly_variable']])
-        else:
-            genes = list(adata.var.index)
+
 
         data = []
         adata_perturb = adata[adata.obs[obs_key] == perturb_key]
@@ -2165,7 +2161,7 @@ class SCCROSSModel(Model):
             sc.pp.normalize_total(adata_u)
             sc.pp.log1p(adata_u)
             sc.pp.scale(adata_u)
-            sc.tl.pca(adata_u, n_comps=use_rep_dim, svd_solver="auto",use_highly_variable=high_variable)
+            sc.tl.pca(adata_u, n_comps=use_rep_dim, svd_solver="auto")
             adata_u.obsm[use_rep] = np.concatenate((adata_u.obsm[use_rep], adata_perturb.obsm[use_rep][:,use_rep_dim:use_rep_dim+5]), axis=1)
 
             data_u_t = AnnDataset(
@@ -2216,7 +2212,7 @@ class SCCROSSModel(Model):
             sc.pp.normalize_total(adata_d)
             sc.pp.log1p(adata_d)
             sc.pp.scale(adata_d)
-            sc.tl.pca(adata_d, n_comps=use_rep_dim, svd_solver="auto",use_highly_variable=high_variable)
+            sc.tl.pca(adata_d, n_comps=use_rep_dim, svd_solver="auto")
             adata_d.obsm[use_rep] = np.concatenate((adata_d.obsm[use_rep], adata_perturb.obsm[use_rep][:, use_rep_dim:use_rep_dim+5]),axis=1)
 
             data_d_t = AnnDataset(
