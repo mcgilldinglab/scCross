@@ -9,19 +9,13 @@ import os
 import queue
 import signal
 from math import ceil
-from typing import Any, List, Mapping, Optional, Tuple
-
-import networkx as nx
+from typing import Any, List, Mapping, Optional
 import numpy as np
-import pandas as pd
 import scipy.sparse
 import torch
 from anndata._core.sparse_dataset import SparseDataset
+from ..utils import config, get_rs, logged, processes, Array, RandomState
 
-from ..num import vertex_degrees
-from ..typehint import Array, RandomState
-from ..utils import config, get_rs, logged, processes
-from .nn import get_default_numpy_dtype
 
 
 #---------------------------------- Datasets -----------------------------------
@@ -281,176 +275,8 @@ class ArrayDataset(Dataset):
         return subdatasets
 
 
-@logged
-class GraphDataset(Dataset):
 
-    r"""
-    Dataset for graphs with support for negative sampling
 
-    Parameters
-    ----------
-    graph
-        Graph object
-    vertices
-        Indexer of graph vertices
-    edge_weight
-        Key of edge attribute for edge weight
-    edge_sign
-        Key of edge attribute for edge sign
-    neg_samples
-        Number of negative samples per edge
-    weighted_sampling
-        Whether to do negative sampling based on vertex importance
-    deemphasize_loops
-        Whether to deemphasize self-loops when computing vertex importance
-    getitem_size
-        Unitary fetch size for each __getitem__ call
-
-    Note
-    ----
-    Custom shuffling performs negative sampling.
-    """
-
-    def __init__(
-            self, graph: nx.Graph, vertices: pd.Index,
-            edge_weight: str, edge_sign: str,
-            neg_samples: int = 1, weighted_sampling: bool = True,
-            deemphasize_loops: bool = True, getitem_size: int = 1
-    ) -> None:
-        super().__init__(getitem_size=getitem_size)
-        self.eidx, self.ewt, self.esgn = \
-            self.graph2triplet(graph, vertices, edge_weight, edge_sign)
-        self.eset = {
-            (i, j, s) for (i, j), s in
-            zip(self.eidx.T, self.esgn)
-        }
-
-        self.vnum = self.eidx.max() + 1
-        if weighted_sampling:
-            if deemphasize_loops:
-                non_loop = self.eidx[0] != self.eidx[1]
-                eidx = self.eidx[:, non_loop]
-                ewt = self.ewt[non_loop]
-            else:
-                eidx = self.eidx
-                ewt = self.ewt
-            degree = vertex_degrees(eidx, ewt, vnum=self.vnum, direction="both")
-        else:
-            degree = np.ones(self.vnum, dtype=self.ewt.dtype)
-        degree_sum = degree.sum()
-        if degree_sum:
-            self.vprob = degree / degree_sum  # Vertex sampling probability
-        else:  # Possible when `deemphasize_loops` is set on a loop-only graph
-            self.vprob = np.ones(self.vnum, dtype=self.ewt.dtype) / self.vnum
-
-        effective_enum = self.ewt.sum()
-        self.eprob = self.ewt / effective_enum  # Edge sampling probability
-        self.effective_enum = round(effective_enum)
-
-        self.neg_samples = neg_samples
-        self.size = self.effective_enum * (1 + self.neg_samples)
-        self.samp_eidx: Optional[np.ndarray] = None
-        self.samp_ewt: Optional[np.ndarray] = None
-        self.samp_esgn: Optional[np.ndarray] = None
-
-    def graph2triplet(
-            self, graph: nx.Graph, vertices: pd.Index,
-            edge_weight: str, edge_sign: str
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        r"""
-        Convert graph object to graph triplet
-
-        Parameters
-        ----------
-        graph
-            Graph object
-        vertices
-            Graph vertices
-        edge_weight
-            Key of edge attribute for edge weight
-        edge_sign
-            Key of edge attribute for edge sign
-
-        Returns
-        -------
-        eidx
-            Vertex indices of edges (:math:`2 \times n_{edges}`)
-        ewt
-            Weight of edges (:math:`n_{edges}`)
-        esgn
-            Sign of edges (:math:`n_{edges}`)
-        """
-        graph = nx.MultiDiGraph(graph)  # Convert undirecitonal to bidirectional, while keeping multi-edges
-
-        default_dtype = get_default_numpy_dtype()
-        i, j, w, s = [], [], [], []
-        for k, v in dict(graph.edges).items():
-            i.append(k[0])
-            j.append(k[1])
-            w.append(v[edge_weight])
-            s.append(v[edge_sign])
-        eidx = np.stack([
-            vertices.get_indexer(i),
-            vertices.get_indexer(j)
-        ]).astype(np.int64)
-        if eidx.min() < 0:
-            raise ValueError("Missing vertices!")
-        ewt = np.asarray(w).astype(default_dtype)
-        if ewt.min() <= 0 or ewt.max() > 1:
-            raise ValueError("Invalid edge weight!")
-        esgn = np.asarray(s).astype(default_dtype)
-        if set(esgn).difference({-1, 1}):
-            raise ValueError("Invalid edge sign!")
-        return eidx, ewt, esgn
-
-    def __len__(self) -> int:
-        return ceil(self.size / self.getitem_size)
-
-    def __getitem__(self, index: int) -> List[torch.Tensor]:
-        s = slice(
-            index * self.getitem_size,
-            min((index + 1) * self.getitem_size, self.size)
-        )
-        return [
-            torch.as_tensor(self.samp_eidx[:, s]),
-            torch.as_tensor(self.samp_ewt[s]),
-            torch.as_tensor(self.samp_esgn[s])
-        ]
-
-    def propose_shuffle(
-            self, seed: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        (pi, pj), pw, ps = self.eidx, self.ewt, self.esgn
-        rs = get_rs(seed)
-        psamp = rs.choice(self.ewt.size, self.effective_enum, replace=True, p=self.eprob)
-        pi_, pj_, pw_, ps_ = pi[psamp], pj[psamp], pw[psamp], ps[psamp]
-        pw_ = np.ones_like(pw_)
-        ni_ = np.tile(pi_, self.neg_samples)
-        nw_ = np.zeros(pw_.size * self.neg_samples, dtype=pw_.dtype)
-        ns_ = np.tile(ps_, self.neg_samples)
-        nj_ = rs.choice(self.vnum, pj_.size * self.neg_samples, replace=True, p=self.vprob)
-
-        remain = np.where([
-            item in self.eset
-            for item in zip(ni_, nj_, ns_)
-        ])[0]
-        while remain.size:  # NOTE: Potential infinite loop if graph too dense
-            newnj = rs.choice(self.vnum, remain.size, replace=True, p=self.vprob)
-            nj_[remain] = newnj
-            remain = remain[[
-                item in self.eset
-                for item in zip(ni_[remain], newnj, ns_[remain])
-            ]]
-        idx = np.stack([np.concatenate([pi_, ni_]), np.concatenate([pj_, nj_])])
-        w = np.concatenate([pw_, nw_])
-        s = np.concatenate([ps_, ns_])
-        perm = rs.permutation(idx.shape[1])
-        return idx[:, perm], w[perm], s[perm]
-
-    def accept_shuffle(
-            self, shuffled: Tuple[np.ndarray, np.ndarray, np.ndarray]
-    ) -> None:
-        self.samp_eidx, self.samp_ewt, self.samp_esgn = shuffled
 
 
 #-------------------------------- Data loaders ---------------------------------
@@ -464,9 +290,7 @@ class DataLoader(torch.utils.data.DataLoader):
 
     def __init__(self, dataset: Dataset, **kwargs) -> None:
         super().__init__(dataset, **kwargs)
-        self.collate_fn = self._collate_graph if isinstance(
-            dataset, GraphDataset
-        ) else self._collate
+        self.collate_fn = self._collate
         self.shuffle = kwargs["shuffle"] if "shuffle" in kwargs else False
 
     def __iter__(self) -> "DataLoader":

@@ -1,6 +1,4 @@
-r"""
-Integration models
-"""
+
 
 import os
 from typing import Mapping
@@ -9,12 +7,10 @@ from typing import Mapping
 import numpy as np
 from anndata import AnnData
 
+from ..utils import logged, Kws
+from .utils import Model
 
-from ..typehint import Kws
-from ..utils import config, logged
-from .base import Model
-from .dx import integration_consistency
-from .sccross import SCCROSSModel
+
 from .sccross import (AUTO, SCCROSSModel,
                      configure_dataset)
 

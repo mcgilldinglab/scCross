@@ -8,16 +8,20 @@ import torch
 import torch.distributions as D
 import torch.nn.functional as F
 
-from ..num import EPS
-from . import cross
-
-from .prob import ZILN, ZIN, ZINB
+from ..utils import EPS
 
 
+from .utils import ZILN, ZIN, ZINB
 
 
 
-class DataEncoder(cross.DataEncoder):
+
+
+
+
+
+
+class DataEncoder(torch.nn.Module):
 
     r"""
     Abstract data encoder
@@ -176,7 +180,7 @@ class VanillaDataEncoder(DataEncoder):
 
 
 
-class NBDataEncoder(cross.DataEncoder):
+class NBDataEncoder(torch.nn.Module):
 
     r"""
     Data encoder for negative binomial data
@@ -275,7 +279,7 @@ class NBDataEncoder(cross.DataEncoder):
         return (x * (self.TOTAL_COUNT / l)).log1p()
 
 
-class ZEncoder(cross.DataEncoder):
+class ZEncoder(torch.nn.Module):
 
     def __init__(
             self, in_features: int, out_features: int,
@@ -298,7 +302,7 @@ class ZEncoder(cross.DataEncoder):
         std = F.softplus(self.std_lin(ptr)) + EPS
         return D.Normal(loc, std)
 
-class ZDecoder(cross.DataDecoder):
+class ZDecoder(torch.nn.Module):
 
     def __init__(
             self, in_features: int, out_features: int,
@@ -324,7 +328,7 @@ class ZDecoder(cross.DataDecoder):
 
 
 
-class DataDecoder(cross.DataDecoder):
+class DataDecoder(torch.nn.Module):
 
     r"""
     Abstract data decoder
@@ -574,7 +578,7 @@ class ZINBDataDecoder(NBDataDecoder):
         )
 
 
-class Discriminator(torch.nn.Sequential, cross.Discriminator):
+class Discriminator(torch.nn.Sequential, torch.nn.Module):
 
     r"""
     Domain discriminator
@@ -616,7 +620,7 @@ class Discriminator(torch.nn.Sequential, cross.Discriminator):
         return super().forward(x)
 
 
-class Discriminator_gen(torch.nn.Sequential, cross.Discriminator):
+class Discriminator_gen(torch.nn.Sequential, torch.nn.Module):
 
     r"""
     Domain discriminator
@@ -669,7 +673,7 @@ class Classifier(torch.nn.Linear):
     """
 
 
-class Prior(cross.Prior):
+class Prior(torch.nn.Module):
 
     r"""
     Prior distribution

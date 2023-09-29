@@ -25,11 +25,10 @@ import sklearn.utils.extmath
 from anndata import AnnData
 from networkx.algorithms.bipartite import biadjacency_matrix
 from sklearn.preprocessing import normalize
-from sparse import COO
 
-from . import num
-from .typehint import Kws
-from .utils import logged, smart_tqdm
+
+from . import utils
+from .utils import logged, smart_tqdm, Kws
 
 
 def lsi(
@@ -56,7 +55,7 @@ def lsi(
     if use_highly_variable is None:
         use_highly_variable = "highly_variable" in adata.var
     adata_use = adata[:, adata.var["highly_variable"]] if use_highly_variable else adata
-    X = num.tfidf(adata_use.X)
+    X = utils.tfidf(adata_use.X)
     X_norm = normalize(X, norm="l1")
     X_norm = np.log1p(X_norm * 1e4)
     X_lsi = sklearn.utils.extmath.randomized_svd(X_norm, n_components, **kwargs)[0]
@@ -66,33 +65,47 @@ def lsi(
 
 
 
+
+
+
+
 def mnn_prior(
         adatas: [AnnData]
 
 ) -> None:
+
+    adatas_modify = adatas.copy()
+
+    for i in range(len(adatas_modify)):
+        if adatas_modify[i].obs['domain'][0] == 'scATAC-seq':
+            adatas_modify[i] = adatas_modify[i].uns['gene']
+
+
+
     common_genes = set()
-    for i in range(len(adatas)):
-        adata_i = adatas[i].var.index.values
+    for i in range(len(adatas_modify)):
+        adata_i = adatas_modify[i].var.index.values
         atac_i_1 = []
         for g in adata_i:
             g = g.split('-')[0]
             atac_i_1.append(g)
 
-        adatas[i].var.index = atac_i_1
-        adatas[i].var_names_make_unique()
+        adatas_modify[i].var.index = atac_i_1
+        adatas_modify[i].var_names_make_unique()
         if len(common_genes) == 0:
-            common_genes = set(adatas[i].var.index.values)
+            common_genes = set(adatas_modify[i].var.index.values)
         else:
-            common_genes &= set(adatas[i].var.index.values)
+            common_genes &= set(adatas_modify[i].var.index.values)
 
     for i in range(len(adatas)):
-        adatas[i] = adatas[i][:, common_genes]
+        adatas_modify[i] = adatas_modify[i][:, list(common_genes)]
 
-    adatas_mnn = sc.external.pp.mnn_correct(adatas, k=20)
+    adatas_mnn = sc.external.pp.mnn_correct(*adatas_modify, k=20)
+    adatas_mnn = adatas_mnn[0]
     sc.tl.pca(adatas_mnn, n_comps=50)
     for i in range(len(adatas)):
         adata_temp = adatas_mnn[adatas_mnn.obs['batch'].isin([str(i)])]
-        if adatas[i].obs['domain'] == 'scATAC-seq':
+        if adatas[i].obs['domain'][0] == 'scATAC-seq':
             adatas[i].obsm['X_lsi'] = np.concatenate((adatas[i].obsm['X_lsi'], adata_temp.obsm['X_pca']), axis=1)
         else:
             adatas[i].obsm['X_pca'] = np.concatenate((adatas[i].obsm['X_pca'], adata_temp.obsm['X_pca']), axis=1)
@@ -112,6 +125,10 @@ def geneActivity(
                                 feature_type=feature_type,
                                 annotation=annotation,
                                 raw=raw)
+
+    sc.pp.normalize_total(geneAct)
+    sc.pp.log1p(geneAct)
+    sc.pp.scale(geneAct)
     return geneAct
 
 
@@ -371,9 +388,9 @@ def _metacell_corr(
     target = adata.var_names.get_indexer(edgelist["target"])
     if method == "pcc":
         sc.pp.log1p(adata)
-        X = num.densify(adata.X.T)
+        X = utils.densify(adata.X.T)
     elif method == "spr":
-        X = num.densify(adata.X.T)
+        X = utils.densify(adata.X.T)
         X = np.array([scipy.stats.rankdata(x) for x in X])
     else:
         raise ValueError(f"Unrecognized method: {method}!")
@@ -416,7 +433,7 @@ def metacell_corr(
         as edge attribute "corr"
     """
     for adata in adatas:
-        if not num.all_counts(adata.X):
+        if not utils.all_counts(adata.X):
             raise ValueError("``.X`` must contain raw counts!")
     adatas = get_metacells(*adatas, use_rep=use_rep, n_meta=n_meta, common=True)
     metacell_corr.logger.info(
@@ -443,8 +460,8 @@ def _metacell_regr(
     biadj = biadjacency_matrix(
         skeleton, adata.var_names, targets, weight=None
     ).astype(bool).T.tocsr()
-    X = num.densify(adata.X)
-    Y = num.densify(adata[:, targets].X.T)
+    X = utils.densify(adata.X)
+    Y = utils.densify(adata[:, targets].X.T)
     coef = []
     model = getattr(sklearn.linear_model, model)
     for target, y, mask in smart_tqdm(zip(targets, Y, biadj), total=len(targets)):
@@ -491,7 +508,7 @@ def metacell_regr(
         as edge attribute "regr"
     """
     for adata in adatas:
-        if not num.all_counts(adata.X):
+        if not utils.all_counts(adata.X):
             raise ValueError("``.X`` must contain raw counts!")
     adatas = get_metacells(*adatas, use_rep=use_rep, n_meta=n_meta, common=True)
     metacell_regr.logger.info(

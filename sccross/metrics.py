@@ -12,9 +12,7 @@ import sklearn.metrics
 import sklearn.neighbors
 from anndata import AnnData
 from scipy.sparse.csgraph import connected_components
-
-from .typehint import RandomState
-from .utils import get_rs
+from .utils import get_rs, RandomState
 
 
 def mean_average_precision(

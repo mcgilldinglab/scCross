@@ -1,35 +1,110 @@
-
-
 import copy
-import os
 import uuid
 from itertools import chain
 from math import ceil
-from typing import Any, List, Mapping, Optional, Tuple, Union
-
 import h5py
-import ignite
-
 import numpy as np
 import pandas as pd
 import scipy.sparse
-import torch
 import torch.distributions as D
 import torch.nn.functional as F
 from anndata import AnnData
 from anndata._core.sparse_dataset import SparseDataset
+import scanpy as sc
+from . import layers
+from .data import ArrayDataset, DataLoader, ParallelDataLoader, Dataset
+from .utils import EarlyStopping, LRScheduler, Tensorboard, autodevice, freeze_running_stats, get_default_numpy_dtype , Model, Trainer, TrainingPlugin
+
+import os
+
+from typing import Any, List, Mapping, Optional, NoReturn,  Tuple
+
+import ignite
+import torch
+from sklearn.metrics.pairwise import cosine_distances
+from ..utils import config, logged, get_chained_attr, get_rs, AnyArray, RandomState
 
 
-from ..typehint import AnyArray, RandomState
-from ..utils import config, get_chained_attr, get_rs, logged
-from . import sc
-from .base import Model
-from .data import  DataLoader, Dataset
-from .cross import CROSS, CROSSTrainer
-from .nn import freeze_running_stats, get_default_numpy_dtype
+
+
 
 AUTO = -1  # Flag for using automatically determined hyperparameters
 DATA_CONFIG = Mapping[str, Any]
+
+
+
+
+
+
+#------------------------ Network interface definition -------------------------
+
+class CROSS(torch.nn.Module):
+
+
+
+    def __init__(
+            self,
+            x2u: Mapping[str, layers.DataEncoder],
+            u2z: Mapping[str, layers.DataEncoder],
+            z2u: Mapping[str, layers.DataDecoder],
+            u2x: Mapping[str, layers.DataDecoder],
+            du: layers.Discriminator,
+            du_gen: Mapping[str, layers.Discriminator], prior: layers.Prior
+    ) -> None:
+        super().__init__()
+        if not set(x2u.keys()) == set(u2x.keys())  != set():
+            raise ValueError(
+                "`x2u`, `u2x`, `idx` should share the same keys "
+                "and non-empty!"
+            )
+        self.keys = list(x2u.keys())  # Keeps a specific order
+
+
+        self.x2u = torch.nn.ModuleDict(x2u)
+        self.u2z = torch.nn.ModuleDict(u2z)
+        self.z2u = torch.nn.ModuleDict(z2u)
+        self.u2x = torch.nn.ModuleDict(u2x)
+
+        self.du_gen = torch.nn.ModuleDict(du_gen)
+        self.du = du
+        self.prior = prior
+
+        self.device = autodevice()
+
+    @property
+    def device(self) -> torch.device:
+        r"""
+        Device of the module
+        """
+        return self._device
+
+    @device.setter
+    def device(self, device: torch.device) -> None:
+        self._device = device
+        self.to(self._device)
+
+    def forward(self) -> NoReturn:
+        r"""
+        Invalidated forward operation
+        """
+        raise RuntimeError("scCross does not support forward operation!")
+
+
+
+DataTensors = Tuple[
+    Mapping[str, torch.Tensor],
+    Mapping[str, torch.Tensor],
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor
+]
+
+
+
+
+
+
+
 
 
 #---------------------------------- Utilities ----------------------------------
@@ -49,9 +124,9 @@ def select_encoder(prob_model: str) -> type:
         Encoder type
     """
     if prob_model in ("Normal", "ZIN", "ZILN"):
-        return sc.VanillaDataEncoder
+        return layers.VanillaDataEncoder
     if prob_model in ("NB", "ZINB"):
-        return sc.NBDataEncoder
+        return layers.NBDataEncoder
     raise ValueError("Invalid `prob_model`!")
 
 
@@ -70,15 +145,15 @@ def select_decoder(prob_model: str) -> type:
         Decoder type
     """
     if prob_model == "Normal":
-        return sc.NormalDataDecoder
+        return layers.NormalDataDecoder
     if prob_model == "ZIN":
-        return sc.ZINDataDecoder
+        return layers.ZINDataDecoder
     if prob_model == "ZILN":
-        return sc.ZILNDataDecoder
+        return layers.ZILNDataDecoder
     if prob_model == "NB":
-        return sc.NBDataDecoder
+        return layers.NBDataDecoder
     if prob_model == "ZINB":
-        return sc.ZINBDataDecoder
+        return layers.ZINBDataDecoder
     raise ValueError("Invalid `prob_model`!")
 
 
@@ -414,13 +489,13 @@ class SCCROSS(CROSS):
 
     def __init__(
             self,
-            x2u: Mapping[str, sc.DataEncoder],
-            u2z: Mapping[str, sc.DataEncoder],
-            z2u: Mapping[str, sc.DataDecoder],
-            u2x: Mapping[str, sc.DataDecoder],
-            du: sc.Discriminator, du_gen: Mapping[str,sc.Discriminator_gen],prior: sc.Prior,
+            x2u: Mapping[str, layers.DataEncoder],
+            u2z: Mapping[str, layers.DataEncoder],
+            z2u: Mapping[str, layers.DataDecoder],
+            u2x: Mapping[str, layers.DataDecoder],
+            du: layers.Discriminator, du_gen: Mapping[str,layers.Discriminator_gen],prior: layers.Prior,
 
-            u2c: Optional[sc.Classifier] = None
+            u2c: Optional[layers.Classifier] = None
     ) -> None:
         super().__init__( x2u,u2z,z2u, u2x,  du,du_gen, prior)
         self.u2c = u2c.to(self.device) if u2c else None
@@ -444,7 +519,7 @@ DataTensors = Tuple[
 
 
 @logged
-class SCCROSSTrainer(CROSSTrainer):
+class SCCROSSTrainer(Trainer):
 
 
 
@@ -457,11 +532,52 @@ class SCCROSSTrainer(CROSSTrainer):
             domain_weight: Mapping[str, float] = None,
             optim: str = None, lr: float = None, **kwargs
     ) -> None:
-        super().__init__(
-            net, lam_data=lam_data, lam_kl=lam_kl, lam_graph=lam_graph,
-            lam_align=lam_align, domain_weight=domain_weight,
-            optim=optim, lr=lr, **kwargs
+
+        required_kwargs = (
+            "lam_data", "lam_kl", "lam_graph", "lam_align",
+            "domain_weight", "optim", "lr"
         )
+        for required_kwarg in required_kwargs:
+            if locals()[required_kwarg] is None:
+                raise ValueError(f"`{required_kwarg}` must be specified!")
+
+        super().__init__(net)
+
+
+        self.required_losses = []
+        for k in self.net.keys:
+            self.required_losses += [f"x_{k}_nll", f"x_{k}_kl", f"x_{k}_elbo"]
+        self.required_losses += ["dsc_loss", "vae_loss", "gen_loss"]
+        self.earlystop_loss = "vae_loss"
+
+        self.lam_data = lam_data
+        self.lam_kl = lam_kl
+        self.lam_graph = lam_graph
+        self.lam_align = lam_align
+        if min(domain_weight.values()) < 0:
+            raise ValueError("Domain weight must be non-negative!")
+        normalizer = sum(domain_weight.values()) / len(domain_weight)
+        self.domain_weight = {k: v / normalizer for k, v in domain_weight.items()}
+
+        self.lr = lr
+        self.vae_optim = getattr(torch.optim, optim)(
+            itertools.chain(
+                self.net.x2u.parameters(),
+                self.net.u2x.parameters(),
+                self.net.u2z.parameters(),
+                self.net.z2u.parameters()
+            ), lr=self.lr, **kwargs
+        )
+        self.dsc_optim = getattr(torch.optim, optim)(
+            itertools.chain(
+                self.net.du.parameters(),
+                self.net.du_gen.parameters()),
+            lr=self.lr, **kwargs
+        )
+
+        self.align_burnin: Optional[int] = None
+
+
         required_kwargs = ("lam_sup", "normalize_u")
         for required_kwarg in required_kwargs:
             if locals()[required_kwarg] is None:
@@ -469,8 +585,7 @@ class SCCROSSTrainer(CROSSTrainer):
         self.lam_sup = lam_sup
         self.normalize_u = normalize_u
         self.freeze_u = False
-        if net.u2c:
-            self.required_losses.append("sup_loss")
+
 
     @property
     def freeze_u(self) -> bool:
@@ -528,111 +643,6 @@ class SCCROSSTrainer(CROSSTrainer):
         }
 
         return x, xalt, xbch, xlbl, xdwt, xflag
-
-    def compute_losses1(
-            self, data: DataTensors, epoch: int, dsc_only: bool = False
-    ) -> Mapping[str, torch.Tensor]:
-        net = self.net
-        x, xalt, xbch, xlbl, xdwt, xflag = data
-
-        u, u1, z, l, x_gen, x_gen_cat, x_gen_flag_cat, usamp1 = {}, {}, {}, {}, {}, {}, {}, {}
-        for k in net.keys:
-            u[k], l[k] = net.x2u[k](x[k], xalt[k], lazy_normalizer=dsc_only)
-        usamp = {k: u[k].rsample() for k in net.keys}
-
-        if self.normalize_u:
-            usamp = {k: F.normalize(usamp[k], dim=1) for k in net.keys}
-        prior = net.prior()
-
-        for k in net.keys:
-            z[k] = net.u2z[k](u[k].mean)
-            u1[k] = net.z2u[k](z[k].mean)
-
-            usamp1[k] = u1[k].rsample()
-            x_gen[k] = net.u2x[k](
-                usamp1[k], xbch[k], l[k]
-            )
-            x_gen_cat[k] = torch.cat([x_gen[k].sample(), x[k]])
-            x_gen_flag_cat[k] = torch.cat([xflag[k], torch.ones_like(xflag[k])])
-        dsc_gen_loss = {
-            k: (F.cross_entropy(net.du_gen[k](x_gen_cat[k]), x_gen_flag_cat[k], reduction="none")).sum()
-            for k in net.keys
-        }
-
-        du_gen_loss_sum = sum(dsc_gen_loss[k] for k in net.keys)
-
-
-
-        u_cat = torch.cat([z[k].mean for k in net.keys])
-        xbch_cat = torch.cat([xbch[k] for k in net.keys])
-        xdwt_cat = torch.cat([xdwt[k] for k in net.keys])
-        xflag_cat = torch.cat([xflag[k] for k in net.keys])
-        anneal = max(1 - (epoch - 1) / self.align_burnin, 0) \
-            if self.align_burnin else 0
-        if anneal:
-            noise = D.Normal(0, u_cat.std(axis=0)).sample((u_cat.shape[0],))
-            u_cat = u_cat + (anneal * self.BURNIN_NOISE_EXAG) * noise
-        dsc_loss = F.cross_entropy(net.du(u_cat, xbch_cat), xflag_cat, reduction="none")
-        dsc_loss = (dsc_loss * xdwt_cat).sum() / xdwt_cat.numel()
-        if dsc_only:
-            return {"dsc_loss": self.lam_align * (dsc_loss+du_gen_loss_sum )}
-
-        if net.u2c:
-            xlbl_cat = torch.cat([xlbl[k] for k in net.keys])
-            lmsk = xlbl_cat >= 0
-            sup_loss = F.cross_entropy(
-                net.u2c(u_cat[lmsk]), xlbl_cat[lmsk], reduction="none"
-            ).sum() / max(lmsk.sum(), 1)
-        else:
-            sup_loss = torch.tensor(0.0, device=self.net.device)
-
-        x_nll = {
-            k: -net.u2x[k](
-                usamp[k], xbch[k], l[k]
-            ).log_prob(x[k]).mean()
-            for k in net.keys
-        }
-        x_kl = {
-            k: D.kl_divergence(
-                u[k], prior
-            ).sum(dim=1).mean() / x[k].shape[1]
-            for k in net.keys
-        }
-
-        means = sum(u[k].mean for k in net.keys) / len(net.keys)
-        scale = sum(u[k].stddev for k in net.keys) / len(net.keys)
-        temp_D = D.Normal(means, scale)
-        z_kl = {
-            k: D.kl_divergence(
-                z[k], temp_D
-            ).sum(dim=1).mean() / x[k].shape[1]
-            for k in net.keys
-        }
-
-        x_elbo = {
-            k: x_nll[k] + self.lam_kl * x_kl[k]
-            for k in net.keys
-        }
-        x_elbo_sum = sum(self.domain_weight[k] * x_elbo[k] for k in net.keys)
-        z_kl_sum = sum(self.domain_weight[k] * z_kl[k] for k in net.keys)
-
-        vae_loss = self.lam_data * x_elbo_sum + 0.1 * z_kl_sum
-
-        gen_loss = vae_loss - self.lam_align * (dsc_loss+du_gen_loss_sum)
-
-        losses = {
-            "dsc_loss": dsc_loss, "vae_loss": vae_loss, "gen_loss": gen_loss,
-
-        }
-        for k in net.keys:
-            losses.update({
-                f"x_{k}_nll": x_nll[k],
-                f"x_{k}_kl": x_kl[k],
-                f"x_{k}_elbo": x_elbo[k]
-            })
-        if net.u2c:
-            losses["sup_loss"] = sup_loss
-        return losses
 
 
 
@@ -868,6 +878,184 @@ class SCCROSSTrainer(CROSSTrainer):
             self.vae_optim.step()
             return losses
 
+
+    @torch.no_grad()
+    def val_step(
+            self, engine: ignite.engine.Engine, data: List[torch.Tensor]
+    ) -> Mapping[str, torch.Tensor]:
+        self.net.eval()
+        data = self.format_data(data)
+        return self.compute_losses(data, engine.state.epoch)
+
+
+    def fit(  # pylint: disable=arguments-differ
+            self, data: ArrayDataset, val_split: float = None,
+            data_batch_size: int = None, graph_batch_size: int = None,
+            align_burnin: int = None, safe_burnin: bool = True,
+            max_epochs: int = None, patience: Optional[int] = None,
+            reduce_lr_patience: Optional[int] = None,
+            wait_n_lrs: Optional[int] = None,
+            random_seed: int = None, directory: Optional[os.PathLike] = None,
+            plugins: Optional[List[TrainingPlugin]] = None
+    ) -> None:
+        r"""
+        Fit network
+
+        Parameters
+        ----------
+        data
+            Data dataset
+        graph
+            Graph dataset
+        val_split
+            Validation split
+        data_batch_size
+            Number of samples in each data minibatch
+        graph_batch_size
+            Number of edges in each graph minibatch
+        align_burnin
+            Number of epochs to wait before starting alignment
+        safe_burnin
+            Whether to postpone learning rate scheduling and earlystopping
+            until after the burnin stage
+        max_epochs
+            Maximal number of epochs
+        patience
+            Patience of early stopping
+        reduce_lr_patience
+            Patience to reduce learning rate
+        wait_n_lrs
+            Wait n learning rate scheduling events before starting early stopping
+        random_seed
+            Random seed
+        directory
+            Directory to store checkpoints and tensorboard logs
+        plugins
+            Optional list of training plugins
+        """
+        required_kwargs = (
+            "val_split", "data_batch_size", "graph_batch_size",
+            "align_burnin", "max_epochs", "random_seed"
+        )
+        for required_kwarg in required_kwargs:
+            if locals()[required_kwarg] is None:
+                raise ValueError(f"`{required_kwarg}` must be specified!")
+        if patience and reduce_lr_patience and reduce_lr_patience >= patience:
+            self.logger.warning(
+                "Parameter `reduce_lr_patience` should be smaller than `patience`, "
+                "otherwise learning rate scheduling would be ineffective."
+            )
+
+
+
+        data.getitem_size = max(1, round(data_batch_size / config.DATALOADER_FETCHES_PER_BATCH))
+
+        data_train, data_val = data.random_split([1 - val_split, val_split], random_state=random_seed)
+        data_train.prepare_shuffle(num_workers=config.ARRAY_SHUFFLE_NUM_WORKERS, random_seed=random_seed)
+        data_val.prepare_shuffle(num_workers=config.ARRAY_SHUFFLE_NUM_WORKERS, random_seed=random_seed)
+
+
+        train_loader = ParallelDataLoader(
+            DataLoader(
+                data_train, batch_size=config.DATALOADER_FETCHES_PER_BATCH, shuffle=True,
+                num_workers=config.DATALOADER_NUM_WORKERS,
+                pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY,
+                drop_last=len(data_train) > config.DATALOADER_FETCHES_PER_BATCH,
+                generator=torch.Generator().manual_seed(random_seed),
+                persistent_workers=False
+            ),
+
+            cycle_flags=[False]
+        )
+        val_loader = ParallelDataLoader(
+            DataLoader(
+                data_val, batch_size=config.DATALOADER_FETCHES_PER_BATCH, shuffle=True,
+                num_workers=config.DATALOADER_NUM_WORKERS,
+                pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
+                generator=torch.Generator().manual_seed(random_seed),
+                persistent_workers=False
+            ),
+
+            cycle_flags=[False]
+        )
+
+        self.align_burnin = align_burnin
+        self.safe_burnin = safe_burnin
+
+        default_plugins = [Tensorboard()]
+        if reduce_lr_patience:
+            default_plugins.append(LRScheduler(
+                self.vae_optim, self.dsc_optim,
+                monitor=self.earlystop_loss, patience=reduce_lr_patience,
+                burnin=self.align_burnin if safe_burnin else 0
+            ))
+        if patience:
+            default_plugins.append(EarlyStopping(
+                monitor=self.earlystop_loss, patience=patience,
+                burnin=self.align_burnin if safe_burnin else 0,
+                wait_n_lrs=wait_n_lrs or 0
+            ))
+        plugins = default_plugins + (plugins or [])
+        try:
+            super().fit(
+                train_loader, val_loader=val_loader,
+                max_epochs=max_epochs, random_seed=random_seed,
+                directory=directory, plugins=plugins
+            )
+        finally:
+            data.clean()
+            data_train.clean()
+            data_val.clean()
+            self.align_burnin = None
+            self.safe_burnin = None
+
+    def get_losses(  # pylint: disable=arguments-differ
+            self, data: ArrayDataset,
+            data_batch_size: int = None,
+            random_seed: int = None
+    ) -> Mapping[str, float]:
+        required_kwargs = ("data_batch_size", "graph_batch_size", "random_seed")
+        for required_kwarg in required_kwargs:
+            if locals()[required_kwarg] is None:
+                raise ValueError(f"`{required_kwarg}` must be specified!")
+
+
+        data.getitem_size = data_batch_size
+
+        data.prepare_shuffle(num_workers=config.ARRAY_SHUFFLE_NUM_WORKERS, random_seed=random_seed)
+
+
+        loader = ParallelDataLoader(
+            DataLoader(
+                data, batch_size=1, shuffle=True, drop_last=False,
+                pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY,
+                generator=torch.Generator().manual_seed(random_seed),
+                persistent_workers=False
+            )
+        )
+
+        try:
+            losses = super().get_losses(loader)
+        finally:
+            data.clean()
+            self.eidx = None
+            self.enorm = None
+            self.esgn = None
+
+        return losses
+
+    def state_dict(self) -> Mapping[str, Any]:
+        return {
+            **super().state_dict(),
+            "vae_optim": self.vae_optim.state_dict(),
+            "dsc_optim": self.dsc_optim.state_dict()
+        }
+
+    def load_state_dict(self, state_dict: Mapping[str, Any]) -> None:
+        self.vae_optim.load_state_dict(state_dict.pop("vae_optim"))
+        self.dsc_optim.load_state_dict(state_dict.pop("dsc_optim"))
+        super().load_state_dict(state_dict)
+
     def __repr__(self):
         vae_optim = repr(self.vae_optim).replace("    ", "  ").replace("\n", "\n  ")
         dsc_optim = repr(self.dsc_optim).replace("    ", "  ").replace("\n", "\n  ")
@@ -1028,7 +1216,7 @@ def getGeneSetMatrix(_name, genes_upper, gene_sets_path):
 
 
 
-class AnnDataset1(Dataset):
+class AnnDataset_gs(Dataset):
     def __init__(self, data, label_name: str = None, second_filepath: str = None,
                  variable_gene_name: str = None):
         """
@@ -1207,7 +1395,7 @@ def configure_dataset(
             gene = adata.uns['gene']
             gene.obs['cell_type'] = adata.obs['cell_type']
 
-        expression_only = AnnDataset1(gene, label_name='cell_type')
+        expression_only = AnnDataset_gs(gene, label_name='cell_type')
         genes_upper = expression_only.genes_upper
         prior_name = "c5.go.bp.v7.4.symbols.gmt+c2.cp.v7.4.symbols.gmt+TF-DNA"
         gene_sets_path = "./gene_sets/"
@@ -1280,9 +1468,9 @@ class SCCROSSModel(Model):
                 data_config["rep_dim"] or len(data_config["features"]), latent_dim,
                 h_depth=h_depth, h_dim=h_dim, dropout=dropout
             )
-            u2z[k] = sc.ZEncoder(50, 50)
-            z2u[k] = sc.ZDecoder(50,50)
-            du_gen[k] = sc.Discriminator_gen(
+            u2z[k] = layers.ZEncoder(50, 50)
+            z2u[k] = layers.ZDecoder(50,50)
+            du_gen[k] = layers.Discriminator_gen(
             len(data_config["features"]), 2, n_batches=0,
             h_depth=h_depth, h_dim=h_dim, dropout=dropout
             )
@@ -1309,13 +1497,13 @@ class SCCROSSModel(Model):
             du_n_batches = ref_batch.size
         else:
             du_n_batches = 0
-        du = sc.Discriminator(
+        du = layers.Discriminator(
             latent_dim, len(self.domains), n_batches=du_n_batches,
             h_depth=h_depth, h_dim=h_dim, dropout=dropout
         )
 
 
-        prior = sc.Prior()
+        prior = layers.Prior()
         super().__init__(
         x2u,u2z,z2u,u2x, du,du_gen, prior
 
@@ -1506,10 +1694,7 @@ class SCCROSSModel(Model):
 
     @torch.no_grad()
     def get_losses(  # pylint: disable=arguments-differ
-            self, adatas: Mapping[str, AnnData],
-            edge_weight: str = "weight", edge_sign: str = "sign",
-            neg_samples: int = 10, data_batch_size: int = 128,
-            graph_batch_size: int = AUTO
+            self, adatas: Mapping[str, AnnData],  data_batch_size: int = 128
     ) -> Mapping[str, np.ndarray]:
         r"""
         Compute loss function values
@@ -1545,7 +1730,6 @@ class SCCROSSModel(Model):
 
         return super().get_losses(
             data, data_batch_size=data_batch_size,
-            graph_batch_size=graph_batch_size,
             random_seed=self.random_seed
         )
 
@@ -1553,7 +1737,7 @@ class SCCROSSModel(Model):
     def encode_data(
             self, key: str, adata: AnnData, batch_size: int = 128,
             n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    ) -> np.ndarray:
         r"""
         Compute data (cell) embedding
 
@@ -1616,7 +1800,7 @@ class SCCROSSModel(Model):
     def generate_cross(
             self, key1: str, key2: str, adata: AnnData, adata_other: AnnData, batch_size: int = 128,
             n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    ) -> np.ndarray:
         r"""
         Compute data (cell) embedding
 
@@ -1684,7 +1868,7 @@ class SCCROSSModel(Model):
             )
             l_other = torch.cat((l_other, l_other_1))
 
-            result_other.append(x.cpu())
+
 
         l_other = torch.mean(l_other)
 
@@ -1708,12 +1892,12 @@ class SCCROSSModel(Model):
 
             result.append(x_out.sample().cpu())
 
-        return torch.cat(result).numpy(),torch.cat(result_other).numpy()
+        return torch.cat(result).numpy()
 
     @torch.no_grad()
-    def generate_batch(
+    def generate_multiSim(
             self, adatas: Mapping[str, AnnData],obs_from:str,name:str,num:int
-    ):
+    )->np.ndarray:
         r"""
         Compute data (cell) embedding
 
@@ -1804,10 +1988,12 @@ class SCCROSSModel(Model):
             result = torch.cat(result).numpy()
             adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
             result_a = scanpy.AnnData(result,var=adata_s.var)
-            #result_a.obs[obs_from] = name
+
             result_s.append(result_a)
 
-        return result_s
+        return np.array(result_s)
+
+    generate_batch = generate_multiSim #alias
 
 
 
@@ -1823,10 +2009,10 @@ class SCCROSSModel(Model):
 
 
     @torch.no_grad()
-    def generate_align(
+    def generate_enhance(
             self, key1: str, adata: AnnData,  batch_size: int = 128,
             n_sample: Optional[int] = None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    ) -> np.ndarray:
         r"""
         Compute data (cell) embedding
 
@@ -1875,7 +2061,7 @@ class SCCROSSModel(Model):
 
 
         result = []
-        result_other = []
+
 
 
 
@@ -1896,10 +2082,161 @@ class SCCROSSModel(Model):
             u1samp = u1.rsample()
             x_out = u2x(u1samp, b, l)
             result.append(x_out.sample().cpu())
-            result_other.append(x.cpu())
 
 
-        return torch.cat(result).numpy(),torch.cat(result_other).numpy()
+
+        return torch.cat(result).numpy()
+
+
+
+    @torch.no_grad()
+    def perturbation_difGenes(
+            self, key1: str, adata: AnnData,  obs_key: str, perturb_key: str, reference_key: str, high_variable: bool = True, use_rep: str = 'X_pca', rep_dim: int = 100
+
+    ) -> pd.DataFrame:  #make sure X is the raw data
+
+        self.net.eval()
+        encoder = self.net.x2u[key1]
+
+
+        u2z = self.net.u2z[key1]
+
+
+        use_rep_dim = rep_dim
+
+        cos_o = cosine_distances(
+            adata[adata.obs[obs_key] == perturb_key].obsm["X_cross"],
+            adata[adata.obs[obs_key] == reference_key].obsm["X_cross"],
+        )
+        cos_o = cos_o.mean()
+        genes = []
+
+
+
+        if high_variable:
+            genes = list(adata.var.index[adata.var['highly_variable']])
+        else:
+            genes = list(adata.var.index)
+
+        data = []
+        adata_perturb = adata[adata.obs[obs_key] == perturb_key]
+
+        for gene in genes:
+            temp = []
+            temp.append(gene)
+            adata_u = adata_perturb.copy()
+            if isinstance(adata_u.X, scipy.sparse._csr.csr_matrix):
+                adata_u.X = np.array(adata_u.X.todense())
+
+
+
+            adata_u[:, gene].X += 1
+            sc.pp.normalize_total(adata_u)
+            sc.pp.log1p(adata_u)
+            sc.pp.scale(adata_u)
+            sc.tl.pca(adata_u, n_comps=use_rep_dim, svd_solver="auto",use_highly_variable=high_variable)
+            adata_u.obsm[use_rep] = np.concatenate((adata_u.obsm[use_rep], adata_perturb.obsm[use_rep][:,use_rep_dim:use_rep_dim+5]), axis=1)
+
+            data_u_t = AnnDataset(
+                [adata_u], [self.domains[key1]],
+                mode="eval", getitem_size=128
+            )
+
+            data_loader = DataLoader(
+                data_u_t, batch_size=1, shuffle=False,
+                num_workers=config.DATALOADER_NUM_WORKERS,
+                pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
+                persistent_workers=False
+            )
+
+            result = []
+
+
+            for x, xalt, *_ in data_loader:
+                u, l = encoder(
+                    x.to(self.net.device, non_blocking=True),
+                    xalt.to(self.net.device, non_blocking=True),
+                    lazy_normalizer=True
+                )
+
+                z = u2z(u.mean)
+
+                result.append(z.sample().cpu())
+
+
+
+
+
+            adata_u.obsm["X_cross"] = torch.cat(result).numpy()
+
+            cos_u = cosine_distances(
+                adata_u[adata_u.obs[obs_key] == perturb_key].obsm["X_cross"],
+                adata[adata.obs[obs_key] == reference_key].obsm["X_cross"],
+            )
+
+            temp.append(cos_o - cos_u.mean())
+
+            adata_d = adata_perturb.copy()
+            if isinstance(adata_d.X, scipy.sparse._csr.csr_matrix):
+                adata_d.X = np.array(adata_d.X.todense())
+
+            adata_d[:, gene].X -= 1
+            adata_d.X[np.where(adata_d.X < 0.0)] = 0
+            sc.pp.normalize_total(adata_d)
+            sc.pp.log1p(adata_d)
+            sc.pp.scale(adata_d)
+            sc.tl.pca(adata_d, n_comps=use_rep_dim, svd_solver="auto",use_highly_variable=high_variable)
+            adata_d.obsm[use_rep] = np.concatenate((adata_d.obsm[use_rep], adata_perturb.obsm[use_rep][:, use_rep_dim:use_rep_dim+5]),axis=1)
+
+            data_d_t = AnnDataset(
+                [adata_d], [self.domains[key1]],
+                mode="eval", getitem_size=128
+            )
+
+            data_loader_d = DataLoader(
+                data_d_t, batch_size=1, shuffle=False,
+                num_workers=config.DATALOADER_NUM_WORKERS,
+                pin_memory=config.DATALOADER_PIN_MEMORY and not config.CPU_ONLY, drop_last=False,
+                persistent_workers=False
+            )
+
+            result_d = []
+
+            for x, xalt, *_ in data_loader_d:
+                u, l = encoder(
+                    x.to(self.net.device, non_blocking=True),
+                    xalt.to(self.net.device, non_blocking=True),
+                    lazy_normalizer=True
+                )
+
+                z = u2z(u.mean)
+
+                result_d.append(z.sample().cpu())
+
+            adata_d.obsm["X_cross"] = torch.cat(result_d).numpy()
+
+            cos_d = cosine_distances(
+                adata_d[adata_d.obs[obs_key] == perturb_key].obsm["X_cross"],
+                adata[adata.obs[obs_key] == reference_key].obsm["X_cross"],
+            )
+
+            temp.append(cos_o - cos_d.mean())
+            data.append(temp)
+
+
+            del adata_u
+            del data_u_t
+            del adata_d
+            del data_d_t
+
+
+        df = pd.DataFrame(data, columns=['gene', 'up', 'down'])
+        return df
+
+
+
+
+
 
 
 
