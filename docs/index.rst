@@ -16,7 +16,11 @@ Welcome to scCross' documentation!
    :maxdepth: 2
    :caption: Contents:
 
-
+   install
+   tutorials
    api
+   release
+
+
 
 

@@ -1798,8 +1798,7 @@ class SCCROSSModel(Model):
 
     @torch.no_grad()
     def generate_cross(
-            self, key1: str, key2: str, adata: AnnData, adata_other: AnnData, batch_size: int = 128,
-            n_sample: Optional[int] = None
+            self, key1: str, key2: str, adata: AnnData, adata_other: AnnData, batch_size: int = 128
     ) -> np.ndarray:
         r"""
         Compute data (cell) embedding
