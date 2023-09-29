@@ -1,4 +1,4 @@
-Welcome to scCross's documentation!
+Welcome to scCross' documentation!
 ==================================
 
 
