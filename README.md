@@ -26,4 +26,5 @@ pip3 install git+https://github.com/mcgilldinglab/scCross
 ```
 
 ## Tutorial:
-* [scCross Documents](https://sccross.readthedocs.io/en/latest/index.html)
+Tutorials of scCross can be found in the following link.
+* [scCross' Documentation](https://sccross.readthedocs.io/en/latest/index.html)
