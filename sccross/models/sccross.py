@@ -2265,12 +2265,12 @@ class SCCROSSModel(Model):
 
 
         df = pd.DataFrame(data, columns=['gene', 'up', 'down'])
-        self.logger.warning(df)
+
         df_up = df.sort_values(by='up',ascending=False)
         df_down = df.sort_values(by='up', ascending=False)
         sor = {}
-        sor['up'] = list(df_up.index)
-        sor['down'] = list(df_down.index)
+        sor['up'] = list(df_up['gene'])
+        sor['down'] = list(df_down['gene'])
         df_fin = pd.DataFrame.from_dict(sor)
 
         return df_fin
