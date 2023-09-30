@@ -1935,7 +1935,7 @@ class SCCROSSModel(Model):
             adata_sub = adata[adata.obs[obs_from].isin([name])]
             data = AnnDataset(
                 [adata_sub], [self.domains[key]],
-                 mode="eval", getitem_size=batch_size
+                 mode="eval", getitem_size=len(adata_sub.obs)
             )
             data_loader = DataLoader(
                 data, batch_size=1, shuffle=False,
