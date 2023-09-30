@@ -1977,17 +1977,21 @@ class SCCROSSModel(Model):
             u2x = self.net.u2x[key]
 
             u = z2u(z_s_m)
+            if len(z_s_m)>1:
+                self.logger.warning(str(len(z_s_m))+"bigger than 1")
+
             l = l_s[g]
             b = 0
             g = g+1
-            result = []
+            result = torch.Tensor
 
             for i in range(num):
                 u1samp = u.rsample()
                 x_out = u2x(u1samp, b, l)
-                result.append(x_out.sample().cpu())
+                #result.append(x_out.sample().cpu())
+                torch.cat((result,x_out.sample().cpu()))
 
-            result = torch.cat(result).numpy()
+            result = result.numpy()
             adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
             result_a = scanpy.AnnData(result,var=adata_s.var)
 
