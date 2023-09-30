@@ -1927,6 +1927,8 @@ class SCCROSSModel(Model):
         l_s = []
         z_s = torch.Tensor()
 
+  
+
         for key,adata in adatas.items():
             x2u = self.net.x2u[key]
             u2z = self.net.u2z[key]
