@@ -47,6 +47,7 @@ dependencies = [
     "sparse>=0.3.1",
     "packaging>=16.8",
     "leidenalg>=0.7"
+    "episcanpy>=0.3.2"
 ]
 
 [project.optional-dependencies]
