@@ -118,7 +118,7 @@ fold = [0.5,1,5,10]
 cell_type = list(set(rna.obs['cell_type']) & set(atac.obs['cell_type']) & set(met.obs['cell_type']))
 for i in fold:
     for j in cell_type:
-        multi_simu = cross.generate_multiSim(datalist,'cell_type',j, fold*len(rna[rna.obs['cell_type'].isin([j])]))
+        multi_simu = cross.generate_multiSim(datalist,'cell_type',j, int(i*len(rna[rna.obs['cell_type'].isin([j])])))
         for adata in multi_simu:
             adata.obs['cell_type'] = cell_type+'_s'
 
