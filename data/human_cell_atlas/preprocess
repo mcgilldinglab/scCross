@@ -1,0 +1,113 @@
+import re
+
+import gzip
+import pathlib
+import pickle
+import anndata
+
+import numpy as np
+import pandas as pd
+import scanpy as sc
+
+
+
+adata = anndata.read_loom(
+    "../download/Cao-2020/GSE156793_S3_gene_count.loom",
+    sparse=True, obs_names="obs_names", var_names="var_names"
+)
+adata.obs.index.name, adata.var.index.name = "cells", "genes"
+
+
+obs_meta = pd.read_csv("../download/Cao-2020/GSE156793_S1_metadata_cells.txt.gz", index_col=0)
+obs_meta.head()
+
+
+
+pattern = re.compile(r"(-[0-9])+$")
+adata.obs.index = np.vectorize(lambda x: pattern.sub("", x))(adata.obs.index)
+adata.obs.index.name = "cells"  # Lost from reassignment
+assert np.all(adata.obs.index == obs_meta.index)
+
+
+
+for col in sorted(set(obs_meta.columns).difference(adata.obs.columns)):
+    adata.obs[col] = obs_meta[col]
+
+
+
+adata.obs["domain"] = "scRNA-seq"
+adata.obs["protocol"] = "sci-RNA-seq3"
+adata.obs["dataset"] = "Cao-2020"
+adata.obs["cell_type"] = adata.obs["Main_cluster_name"]
+adata.obs.head()
+
+
+adata.var.pop("gene_type")  # Avoid duplicated columns
+
+
+
+
+assert adata.var.dropna(subset=["chrom", "chromStart", "chromEnd"]).shape[0] == adata.var.shape[0]
+adata.var = adata.var.astype({"chromStart": int, "chromEnd": int})
+
+
+
+
+sc.pp.filter_genes(adata, min_counts=1)
+
+
+
+sc.pp.highly_variable_genes(adata, n_top_genes=4000, flavor="seurat_v3")
+adata.var.highly_variable.sum()
+
+
+adata.write_h5ad("rna_preprocessed.h5ad", compression="gzip")
+
+
+
+
+adata = []
+for fname in sorted(pathlib.Path("../download/Domcke-2020").glob("*.pkl.gz")):
+    print(f"Processing {fname}...")
+    with gzip.open(fname, "rb") as f:
+        d = pickle.load(f)
+        adata.append(anndata.AnnData(
+            X=d["X"], obs=d["obs"],
+            var=pd.DataFrame(index=d["var_names"])
+        ))
+
+
+adata = anndata.AnnData.concatenate(*adata, batch_key="file", index_unique=None)
+adata.obs.index.name, adata.var.index.name = "cells", "peaks"
+
+
+
+adata.obs["domain"] = "scATAC-seq"
+adata.obs["protocol"] = "sci-ATAC-seq3"
+adata.obs["dataset"] = "Domcke-2020"
+adata.obs.head()
+
+
+
+adata.var["chrom"] = np.vectorize(lambda x: x.split("-")[0])(adata.var_names)
+adata.var["chromStart"] = np.vectorize(lambda x: int(x.split("-")[1]))(adata.var_names)
+adata.var["chromEnd"] = np.vectorize(lambda x: int(x.split("-")[2]))(adata.var_names)
+adata.var["genome"] = "hg19"
+adata.var.head()
+
+
+
+
+
+#%%
+
+sc.pp.filter_genes(adata, min_counts=1)
+adata
+
+#%% md
+
+# Save data
+
+#%%
+
+adata.write_h5ad("atac_preprocessed.h5ad", compression="gzip")
