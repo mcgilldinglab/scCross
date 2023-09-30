@@ -1977,8 +1977,8 @@ class SCCROSSModel(Model):
             u2x = self.net.u2x[key]
 
             u = z2u(z_s_m)
-            if len(z_s_m)>1:
-                self.logger.warning(str(len(z_s_m))+"bigger than 1")
+            if len(z_s_m)==1:
+                self.logger.warning(z_s_m)
 
             l = l_s[g]
             b = 0
@@ -1992,6 +1992,7 @@ class SCCROSSModel(Model):
                 result = torch.cat((result , x_out.sample().cpu()))
 
             result = result.numpy()
+            self.logger.warning(result)
             adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
             result_a = scanpy.AnnData(result,var=adata_s.var)
 
