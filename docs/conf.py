@@ -87,3 +87,6 @@ def format_annotation(annotation, fully_qualified=True):  # pylint: disable=unus
             return f':py:class:`~{override}`'
     return fa_orig(annotation)
 sphinx_autodoc_typehints.format_annotation = format_annotation
+
+from sphinx.apidoc import main
+main(['-e', '-o', ...])
