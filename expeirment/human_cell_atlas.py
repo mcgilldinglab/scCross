@@ -2,13 +2,40 @@ import anndata
 import scanpy as sc
 import sccross
 import pandas as pd
+import numpy as np
 from matplotlib import rcParams
 from sklearn.metrics import adjusted_rand_score,normalized_mutual_info_score
 
 # Read data
 rcParams["figure.figsize"] = (4, 4)
-rna = anndata.read_h5ad("../data/matched_mouse_brain/rna_preprocessed.h5ad")
-atac = anndata.read_h5ad("../data/matched_mouse_brain/atac_preprocessed.h5ad")
+rna = anndata.read_h5ad("../data/human_cell_atlas/rna_preprocessed.h5ad")
+atac = anndata.read_h5ad("../data/human_cell_atlas/atac_preprocessed.h5ad")
+
+# meta cell
+sc.pp.neighbors(rna, n_pcs=rna.obsm["X_pca"].shape[1], use_rep="X_pca", metric="cosine")
+sc.tl.leiden(rna)
+rna.obs['metacell'] = rna.obs['leiden']
+
+rna_agg = sccross.data.aggregate_obs(
+    rna, by="metacell", X_agg="sum",
+    obs_agg={
+        "cell_type": "majority", "Organ": "majority", "domain": "majority",
+        "n_cells": "sum", "organ_balancing": "sum"
+    },
+    obsm_agg={"X_pca": "mean", "X_umap": "mean"}
+)
+
+
+atac_agg = sccross.data.aggregate_obs(
+    atac, by="metacell", X_agg="sum",
+    obs_agg={
+        "cell_type": "majority", "tissue": "majority", "domain": "majority",
+        "n_cells": "sum", "organ_balancing": "sum"
+    },
+    obsm_agg={"X_lsi": "mean", "X_umap": "mean"}
+)
+
+
 
 
 # Configure data
@@ -25,7 +52,13 @@ sccross.models.configure_dataset(
 
 # MNN prior
 
-sccross.data.mnn_prior([rna,atac])
+sccross.data.mnn_prior([rna_agg,atac_agg])
+
+for i in range(len(rna.obs)):
+    rna[i].obsm['X_pca'] = np.concatenate((rna[i].obsm['X_pca'], rna_agg[rna_agg.obs['metacell']==rna[i].obs['metacell']].obsm['X_pca'][-50:]), axis=1)
+
+for i in range(len(atac.obs)):
+    atac[i].obsm['X_lsi'] = np.concatenate((atac[i].obsm['X_lsi'], atac_agg[atac_agg.obs['metacell']==atac[i].obs['metacell']].obsm['X_lsi'][-50:]), axis=1)
 
 
 # Training
@@ -68,12 +101,7 @@ ASWb = sccross.metrics.avg_silhouette_width_batch(combined.obsm['X_cross'],combi
 GCT = sccross.metrics.graph_connectivity(combined.obsm['X_cross'],combined.obs['cell_type'])
 print("ASW: "+str(ASW)+"ASWb: "+str(ASWb)+"GCT: "+str(GCT))
 
-a1,b1 = sccross.metrics.foscttm(rna.obsm['X_cross'],rna.obsm['X_cross_atac'])
 
-for i in [250,500,1000,2000,4000]:
-    if len(a1)>i:
-        foscttm = (a1[0:i-1].mean()+b1[0:i-1].mean())/2
-        print('FOSCTTM'+ str(i)+': '+ str(foscttm))
 
 
 

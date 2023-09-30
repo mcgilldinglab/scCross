@@ -7,8 +7,8 @@ from matplotlib import rcParams
 
 # Read data
 rcParams["figure.figsize"] = (4, 4)
-rna = anndata.read_h5ad("../data/matched_mouse_brain/rna_preprocessed.h5ad")
-adt = anndata.read_h5ad("../data/matched_mouse_brain/adt_preprocessed.h5ad")
+rna = anndata.read_h5ad("../data/COVID-19/rna_preprocessed.h5ad")
+adt = anndata.read_h5ad("../data/COVID-19/adt_preprocessed.h5ad")
 
 
 # Configure data
