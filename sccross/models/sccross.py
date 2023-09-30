@@ -1927,7 +1927,7 @@ class SCCROSSModel(Model):
         l_s = []
         z_s = torch.Tensor()
 
-  
+
 
         for key,adata in adatas.items():
             x2u = self.net.x2u[key]
@@ -1935,7 +1935,7 @@ class SCCROSSModel(Model):
             adata_sub = adata[adata.obs[obs_from].isin([name])]
             data = AnnDataset(
                 [adata_sub], [self.domains[key]],
-                 mode="eval", getitem_size=len(adata_sub.obs)
+                 mode="eval", getitem_size=batch_size
             )
             data_loader = DataLoader(
                 data, batch_size=1, shuffle=False,
@@ -1957,7 +1957,7 @@ class SCCROSSModel(Model):
                 )
                 z = u2z(u.mean)
 
-                l = torch.mean(l.cpu())
+                l = torch.mean(l)#.cpu())
 
 
                 z_t = torch.mean(z.mean,dim=0,keepdim=True)
@@ -1985,7 +1985,7 @@ class SCCROSSModel(Model):
             for i in range(num):
                 u1samp = u.rsample()
                 x_out = u2x(u1samp, b, l)
-                result.append(x_out.sample().cpu())
+                result.append(x_out.sample())#.cpu())
 
             result = torch.cat(result).numpy()
             adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
