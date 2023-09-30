@@ -2267,7 +2267,7 @@ class SCCROSSModel(Model):
         df = pd.DataFrame(data, columns=['gene', 'up', 'down'])
 
         df_up = df.sort_values(by='up',ascending=False)
-        df_down = df.sort_values(by='up', ascending=False)
+        df_down = df.sort_values(by='down', ascending=False)
         sor = {}
         sor['up'] = list(df_up['gene'])
         sor['down'] = list(df_down['gene'])
