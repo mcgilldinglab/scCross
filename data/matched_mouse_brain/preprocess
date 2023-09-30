@@ -68,6 +68,33 @@ sc.pp.filter_genes(atac, min_counts=1)
 sc.pp.highly_variable_genes(rna, n_top_genes=2000, flavor="seurat_v3")
 rna.var.highly_variable.sum()
 
+cluster2ann = {
+    'E2Rasgrf2':'E2',
+    'E3Rorb':'E3',
+    'E6Tle4':'E6',
+    'E4Il1rapl2':'E4',
+    'E5Galnt14':'E5',
+    'E4Thsd7a':'E4',
+    'Ast':'Ast',
+    'E5Parm1':'E5',
+    'OliM':'Oli',
+    'InP':'In',
+    'E3Rmst':'E3',
+    'InS':'In',
+    'E5Sulf1':'E5',
+    'Clau':'Clau',
+    'InV':'In',
+    'InN':'In',
+    'OPC':'Oli',
+    'E5Tshz2':'E5',
+    'Mic':'Oli',
+    'OliI':'Oli',
+    'Endo':'E2',
+    'Peri':'E3'
+}
+rna.obs['cell_type'] = rna.obs['cell_type'].map(cluster2ann).astype('category')
+atac.obs['cell_type'] = rna.obs['cell_type'].map(cluster2ann).astype('category')
+
 
 
 rna.write("rna_preprocessed.h5ad", compression="gzip")

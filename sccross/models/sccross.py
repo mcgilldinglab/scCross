@@ -1957,13 +1957,13 @@ class SCCROSSModel(Model):
                 )
                 z = u2z(u.mean)
 
-                l = torch.mean(l)#.cpu())
+                l = torch.mean(l.cpu())
 
 
                 z_t = torch.mean(z.mean,dim=0,keepdim=True)
 
                 l_s_t.append(l)
-                z_s = torch.cat((z_s, z_t))
+                z_s = torch.cat((z_s, z_t.cpu()))
 
             l_s.append(np.mean(l_s_t))
 
