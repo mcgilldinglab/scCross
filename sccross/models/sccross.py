@@ -1985,7 +1985,7 @@ class SCCROSSModel(Model):
             for i in range(num):
                 u1samp = u.rsample()
                 x_out = u2x(u1samp, b, l)
-                result.append(x_out.sample())#.cpu())
+                result.append(x_out.sample().cpu())
 
             result = torch.cat(result).numpy()
             adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
