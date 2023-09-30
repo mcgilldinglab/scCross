@@ -1925,7 +1925,7 @@ class SCCROSSModel(Model):
         self.net.eval()
 
         l_s = []
-        z_s = torch.Tensor()
+        z_s = torch.Tensor().cuda()
 
 
 
@@ -1963,7 +1963,7 @@ class SCCROSSModel(Model):
                 z_t = torch.mean(z.mean,dim=0,keepdim=True)
 
                 l_s_t.append(l)
-                z_s = torch.cat((z_s, z_t.cpu()))
+                z_s = torch.cat((z_s, z_t))
 
             l_s.append(np.mean(l_s_t))
 
