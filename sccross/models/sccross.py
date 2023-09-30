@@ -1983,13 +1983,13 @@ class SCCROSSModel(Model):
             l = l_s[g]
             b = 0
             g = g+1
-            result = torch.Tensor
+            result = torch.Tensor()
 
             for i in range(num):
                 u1samp = u.rsample()
                 x_out = u2x(u1samp, b, l)
                 #result.append(x_out.sample().cpu())
-                torch.cat((result,x_out.sample().cpu()))
+                result = torch.cat((result , x_out.sample().cpu()))
 
             result = result.numpy()
             adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
