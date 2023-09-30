@@ -46,7 +46,7 @@ dependencies = [
     "h5py>=2.10",
     "sparse>=0.3.1",
     "packaging>=16.8",
-    "leidenalg>=0.7"
+    "leidenalg>=0.7",
     "episcanpy>=0.3.2"
 ]
 
