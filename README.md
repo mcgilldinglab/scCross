@@ -17,8 +17,6 @@ Single-cell multi-omics provides deep biological insights, but data scarcity and
 ## Installation
 
 
-### Installing CellAgentChat
-
 You may install scCross and its dependencies by the following command:
 
 ```
