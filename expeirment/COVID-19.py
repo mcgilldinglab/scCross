@@ -1,0 +1,57 @@
+import anndata
+import scanpy as sc
+import sccross
+import pandas as pd
+from matplotlib import rcParams
+
+
+# Read data
+rcParams["figure.figsize"] = (4, 4)
+rna = anndata.read_h5ad("../data/matched_mouse_brain/rna_preprocessed.h5ad")
+adt = anndata.read_h5ad("../data/matched_mouse_brain/adt_preprocessed.h5ad")
+
+
+# Configure data
+sccross.models.configure_dataset(
+    rna, "NB", use_highly_variable=True,
+    use_layer = 'counts',
+     use_rep="X_pca"
+)
+
+sccross.models.configure_dataset(
+    adt, "NB", use_highly_variable=True,
+    use_rep="X_lsi"
+)
+
+# MNN prior
+sccross.data.mnn_prior([rna,adt])
+
+
+# Training
+cross = sccross.models.fit_SCCROSS(
+    {"rna": rna, "adt": adt},
+    fit_kws={"directory": "sccross"}
+)
+
+
+# Save model
+cross.save("cross.dill")
+#cross = sccross.models.load_model("cross.dill")
+
+
+
+rna.obsm["X_cross"] = cross.encode_data("rna", rna)
+adt.obsm["X_cross"] = cross.encode_data("adt", adt)
+
+
+# Perturbation
+rna.X = rna.layers['counts']
+genes = rna.var.query("highly_variable").index.to_numpy().tolist()
+difGenes = cross.perturbation_difGenes('rna',rna,'Status','Covid','Healthy',genes)
+
+gene_up = difGenes['up'][:100]
+rna[rna.obs['cell_type'].isin(['In']),genes].X += 0.5*rna[rna.obs['cell_type'].isin(['In']),genes].X
+rnaCroadt = cross.generate_cross( 'rna', 'adt', rna, adt)
+rnaCroadt = sc.AnnData(rnaCroadt,obs=rna.obs,var= adt.var.query("highly_variable"))
+print(rnaCroadt.X)
+
