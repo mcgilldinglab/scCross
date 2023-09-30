@@ -83,7 +83,7 @@ for key1,data1 in datalist.items():
     for key2, data2 in datalist.items():
         if key1 != key2:
             cross_ge = cross.generate_cross( key1, key2, data1, data2)
-            cross_ge = sc.AnnData(cross_ge,obs=atac.obs,var= rna.var.query("highly_variable"))
+            cross_ge = sc.AnnData(cross_ge,obs=data1.obs,var= data2.var.query("highly_variable"))
 
             sc.pp.normalize_total(cross_ge)
             sc.pp.log1p(cross_ge)
@@ -98,10 +98,14 @@ for key1,data1 in datalist.items():
 for key, data in datalist.items():
     data.obsm['enhanced'] = cross.generate_enhance(key, data)
 
-    data_enhanced = sc.AnnData(rna.obsm['enhanced'],obs=rna.obs,var = rna.var.query("highly_variable"))
+    data_enhanced = sc.AnnData(data.obsm['enhanced'],obs=data.obs,var = data.var.query("highly_variable"))
     sc.pp.normalize_total(data_enhanced)
     sc.pp.log1p(data_enhanced)
     sc.pp.scale(data_enhanced)
+    sc.tl.pca(data_enhanced, n_comps=100, svd_solver="auto")
+    sc.pp.neighbors(data_enhanced, metric="cosine")
+    sc.tl.umap(data_enhanced)
+    sc.pl.umap(data_enhanced, color=["cell_type"], save=key + '_enhance' + '.pdf')
     sc.tl.rank_genes_groups(data_enhanced,'cell_type')
     df = pd.DataFrame(data_enhanced.uns['rank_genes_groups']['names'])
     df.to_csv(key+'_enhanced_rankGenes_cellType.csv')
@@ -110,10 +114,10 @@ for key, data in datalist.items():
 # Multi-omics data simulation
 
 fold = [0.5,1,5,10]
-cell_type = list(set(rna.obs['cell_type']))
+cell_type = list(set(rna.obs['cell_type']) & set(atac.obs['cell_type']))
 for i in fold:
     for j in cell_type:
-        multi_simu = cross.generate_multiSim(datalist,'cell_type',cell_type, fold*len(rna[rna.obs['cell_type'].isin(['Ast'])]))
+        multi_simu = cross.generate_multiSim(datalist,'cell_type',cell_type, fold*len(rna[rna.obs['cell_type'].isin([cell_type])]))
         for adata in multi_simu:
             adata.obs['cell_type'] = cell_type+'_s'
 
@@ -138,6 +142,7 @@ for i in fold:
         sc.pp.neighbors(atac_temp, use_rep = 'X_lsi',  metric="cosine")
         sc.tl.umap(atac_temp)
         sc.pl.umap(atac_temp, color=["cell_type"],save='ATAC'+cell_type+'_'+fold+'.pdf')
+
 
 
 

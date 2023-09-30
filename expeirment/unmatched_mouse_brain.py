@@ -77,14 +77,14 @@ GCT = sccross.metrics.graph_connectivity(combined.obsm['X_cross'],combined.obs['
 print("ASW: "+str(ASW)+"ASWb: "+str(ASWb)+"GCT: "+str(GCT))
 
 
-datalist = {'rna':rna,'atac':atac,'snm':snm}
+datalist = {'rna':rna,'atac':atac,'met':met}
 
 # Cross generation
 for key1,data1 in datalist.items():
     for key2, data2 in datalist.items():
         if key1 != key2:
             cross_ge = cross.generate_cross( key1, key2, data1, data2)
-            cross_ge = sc.AnnData(cross_ge,obs=atac.obs,var= rna.var.query("highly_variable"))
+            cross_ge = sc.AnnData(cross_ge,obs=data1.obs,var= data2.var.query("highly_variable"))
 
             sc.pp.normalize_total(cross_ge)
             sc.pp.log1p(cross_ge)
@@ -94,29 +94,19 @@ for key1,data1 in datalist.items():
             sc.tl.umap(cross_ge)
             sc.pl.umap(cross_ge, color=["cell_type"],save=key1+'_to_'+key2+'.pdf')
 
-# Cross generation online
-rna_other = anndata.read_h5ad("../data/matched_mouse_brain/rna_preprocessed.h5ad")
-atac_other = anndata.read_h5ad("../data/matched_mouse_brain/atac_preprocessed.h5ad")
-cross_ge = cross.generate_cross( 'atac', atac_other, 'rna', rna)
-cross_ge = sc.AnnData(cross_ge,obs=atac_other.obs,var= rna.var.query("highly_variable"))
-sc.pp.normalize_total(cross_ge)
-sc.pp.log1p(cross_ge)
-sc.tl.pca(cross_ge, n_comps=100, svd_solver="auto")
-sc.pp.neighbors(cross_ge,  metric="cosine")
-sc.tl.umap(cross_ge)
-sc.pl.umap(cross_ge, color=["cell_type"],save='atacOther_to_rnaOther_online.pdf')
-sc.pl.umap(rna, color=["cell_type"],save='original_rnaOther.pdf')
-
-
 
 # Data enhancing
 for key, data in datalist.items():
     data.obsm['enhanced'] = cross.generate_enhance(key, data)
 
-    data_enhanced = sc.AnnData(rna.obsm['enhanced'],obs=rna.obs,var = rna.var.query("highly_variable"))
+    data_enhanced = sc.AnnData(data.obsm['enhanced'],obs=data.obs,var = data.var.query("highly_variable"))
     sc.pp.normalize_total(data_enhanced)
     sc.pp.log1p(data_enhanced)
     sc.pp.scale(data_enhanced)
+    sc.tl.pca(data_enhanced, n_comps=100, svd_solver="auto")
+    sc.pp.neighbors(data_enhanced, metric="cosine")
+    sc.tl.umap(data_enhanced)
+    sc.pl.umap(data_enhanced, color=["cell_type"], save=key + '_enhance' + '.pdf')
     sc.tl.rank_genes_groups(data_enhanced,'cell_type')
     df = pd.DataFrame(data_enhanced.uns['rank_genes_groups']['names'])
     df.to_csv(key+'_enhanced_rankGenes_cellType.csv')
@@ -125,10 +115,10 @@ for key, data in datalist.items():
 # Multi-omics data simulation
 
 fold = [0.5,1,5,10]
-cell_type = list(set(rna.obs['cell_type']))
+cell_type = list(set(rna.obs['cell_type']) & set(atac.obs['cell_type']) & set(met.obs['cell_type']))
 for i in fold:
     for j in cell_type:
-        multi_simu = cross.generate_multiSim(datalist,'cell_type',cell_type, fold*len(rna[rna.obs['cell_type'].isin(['Ast'])]))
+        multi_simu = cross.generate_multiSim(datalist,'cell_type',cell_type, fold*len(rna[rna.obs['cell_type'].isin([cell_type])]))
         for adata in multi_simu:
             adata.obs['cell_type'] = cell_type+'_s'
 
@@ -140,6 +130,10 @@ for i in fold:
         atac_temp = atac.copy()
         atac_temp = atac_temp[:,atac_temp.var.query("highly_variable").index]
         atac_temp = sc.concat([atac_temp,multi_simu[1]])
+
+        met_temp = met.copy()
+        met_temp = met_temp[:, met_temp.var.query("highly_variable").index]
+        met_temp = sc.concat([met_temp, multi_simu[2]])
 
         sc.pp.normalize_total(rna_temp)
         sc.pp.log1p(rna_temp)
@@ -153,6 +147,14 @@ for i in fold:
         sc.pp.neighbors(atac_temp, use_rep = 'X_lsi',  metric="cosine")
         sc.tl.umap(atac_temp)
         sc.pl.umap(atac_temp, color=["cell_type"],save='ATAC'+cell_type+'_'+fold+'.pdf')
+
+        sc.pp.normalize_total(met_temp)
+        sc.pp.log1p(met_temp)
+        sc.pp.scale(met_temp)
+        sc.tl.pca(met_temp, n_comps=100, svd_solver="auto")
+        sc.pp.neighbors(met_temp, metric="cosine")
+        sc.tl.umap(met_temp)
+        sc.pl.umap(met_temp, color=["cell_type"], save='met' + cell_type + '_' + fold + '.pdf')
 
 
 
