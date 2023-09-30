@@ -1896,7 +1896,7 @@ class SCCROSSModel(Model):
     @torch.no_grad()
     def generate_multiSim(
             self, adatas: Mapping[str, AnnData],obs_from:str,name:str,num:int, batch_size: int = 128
-    )->np.ndarray:
+    )->[]:
         r"""
         Generate multi-omics simulation data
 
@@ -1995,12 +1995,13 @@ class SCCROSSModel(Model):
             self.logger.warning(result)
             adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
             result_a = scanpy.AnnData(result,var=adata_s.var)
+            self.logger.warning(result_a)
 
             result_s.append(result_a)
 
-        return np.array(result_s)
+        return result_s
 
-    generate_batch = generate_multiSim #alias
+    #generate_batch = generate_multiSim #alias
 
 
 
