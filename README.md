@@ -25,6 +25,6 @@ Single-cell multi-omics provides deep biological insights, but data scarcity and
 You may install scCross and its dependencies by the following command:
 
 ```
-pip3 install git+https://github.com/mcgilldinglab/scCross
+pip install sccross
 ```
 

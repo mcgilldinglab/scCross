@@ -10,7 +10,7 @@ The ``sccross`` package can be installed via conda using one of the following co
 .. code-block:: bash
     :linenos:
 
-    pip3 install git+https://github.com/mcgilldinglab/scCross
+    pip install sccross
 
 
 
