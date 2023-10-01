@@ -3,11 +3,11 @@ Sphinx configuration
 """
 
 import inspect
-
+import sccross
 import sphinx_autodoc_typehints
 project = 'scCross'
-version = '1.0.0'
-release = '1.0.0'
+version = sccross.__version__
+release = sccross.__version__
 author = "Xiu-hui Yang"
 copyright = "Hao Wu Lab, 2023"
 
