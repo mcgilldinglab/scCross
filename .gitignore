@@ -1,2 +1,5 @@
 
 *.xml
+dist/sccross-1.0.0.tar.gz
+dist/sccross-1.0.0-py3-none-any.whl
+.idea/scCross1.iml

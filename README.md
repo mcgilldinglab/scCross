@@ -1,8 +1,8 @@
 # scCross
-A Deep Learning-Based Model for integration, cross-dataset cross-modality generation and matched muti-omics simulation of single-cell multi-omics data. Our model can also maintain in-silico perturbations in cross-modality generation and can use in-silico perturbations to find key genes.  
+A Deep Learning-Based Model for the integration, cross-dataset cross-modality generation, self enhancing and matched multi-omics simulation of single-cell multi-omics data. Our model excels at maintaining in-silico perturbations during cross-modality generation and harnessing these perturbations to identify key genes.
 
-Instructions, documentation, and tutorials can be found at:  
-
+For detailed instructions, comprehensive documentation, and helpful tutorials, please visit:
+  
 * [https://sccross.readthedocs.io](https://sccross.readthedocs.io/en/latest/)
 
 
@@ -12,11 +12,22 @@ Single-cell multi-omics provides deep biological insights, but data scarcity and
 
 ## Key Capabilities
 
-1. Integrate more than three matched or unmatchd sinlge cell multi-omics datasets of totally different or partly same kinds of omics into one latent space which can be used in following downsteam analysis. The cell amount can be over 4 million.
-2. Cross generate abitary two kinds of single cell data in training set to each other.
-3. Simulate matched single cell muti-omics data of a special cellular status in arbitary kind of omics and arbitary amount.
-4. Find key genes precisely in comparing two kinds of cell clusters via in-silico pertubation.
-5. Effectively maintain genome changing when perturbating one omics and cross generating to to other omics.
+1. Combine more than three single-cell multi-omics datasets, whether they are matched or unmatched, into a unified latent space. This space can be used for downstream analysis, even when dealing with over 4 million cells of varying types.
+
+2. Generate cross-compatible single-cell data between two different types in the training set.
+
+3. Enhance single-cell omics data through self-improvement techniques.
+
+4. Simulate single-cell multi-omics data that match a specific cellular state, irrespective of the type and quantity of omics data involved.
+
+5. Accurately identify key genes by comparing two different cell clusters using in-silico perturbation methods.
+
+6. Maintain genomic integrity during omics perturbations and cross-generations effectively.
+
+
+
+
+
 
 
 ## Installation
