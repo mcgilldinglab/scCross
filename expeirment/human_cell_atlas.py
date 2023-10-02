@@ -46,7 +46,7 @@ sccross.models.configure_dataset(
 )
 
 sccross.models.configure_dataset(
-    atac, "NB", use_highly_variable=True,
+    atac, "NB", use_highly_variable=False,
     use_rep="X_lsi"
 )
 
