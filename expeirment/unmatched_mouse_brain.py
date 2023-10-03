@@ -9,7 +9,7 @@ from sklearn.metrics import adjusted_rand_score,normalized_mutual_info_score
 rcParams["figure.figsize"] = (4, 4)
 rna = anndata.read_h5ad("../data/unmatched_mouse_brain/rna_preprocessed.h5ad")
 atac = anndata.read_h5ad("../data/unmatched_mouse_brain/atac_preprocessed.h5ad")
-snm = anndata.read_h5ad("../data/unmatched_mouse_brain/snm_preprocessed.h5ad")
+met = anndata.read_h5ad("../data/unmatched_mouse_brain/snm_preprocessed.h5ad")
 
 # Configure data
 sccross.models.configure_dataset(
@@ -24,17 +24,17 @@ sccross.models.configure_dataset(
 )
 
 sccross.models.configure_dataset(
-    snm, "NB", use_highly_variable=False,
+    met, "NB", use_highly_variable=False,
     use_rep="X_pca"
 )
 
 # MNN prior
-sccross.data.mnn_prior([rna,atac,snm])
+sccross.data.mnn_prior([rna,atac,met])
 
 
 # Training
 cross = sccross.models.fit_SCCROSS(
-    {"rna": rna, "atac": atac,'snm':snm},
+    {"rna": rna, "atac": atac,'snm':met},
     fit_kws={"directory": "sccross"}
 )
 
@@ -47,7 +47,7 @@ cross.save("cross.dill")
 # Integration
 rna.obsm["X_cross"] = cross.encode_data("rna", rna)
 atac.obsm["X_cross"] = cross.encode_data("atac", atac)
-snm.obsm["X_cross"] = cross.encode_data("snm", snm)
+met.obsm["X_cross"] = cross.encode_data("snm", met)
 
 combined = anndata.concat([rna, atac])
 
@@ -67,8 +67,8 @@ ARI = adjusted_rand_score(atac.obs['cell_type'], atac.obs['leiden'])
 NMI = normalized_mutual_info_score(atac.obs['cell_type'],atac.obs['leiden'])
 print("ATAC:ARI: "+str(ARI)+"  "+"NMI: "+str(NMI))
 
-ARI = adjusted_rand_score(snm.obs['cell_type'], snm.obs['leiden'])
-NMI = normalized_mutual_info_score(snm.obs['cell_type'],snm.obs['leiden'])
+ARI = adjusted_rand_score(met.obs['cell_type'], met.obs['leiden'])
+NMI = normalized_mutual_info_score(met.obs['cell_type'],met.obs['leiden'])
 print("snmC:ARI: "+str(ARI)+"  "+"NMI: "+str(NMI))
 
 ASW = sccross.metrics.avg_silhouette_width(combined.obsm['X_cross'],combined.obs['cell_type'])
@@ -84,15 +84,20 @@ for key1,data1 in datalist.items():
     for key2, data2 in datalist.items():
         if key1 != key2:
             cross_ge = cross.generate_cross( key1, key2, data1, data2)
-            cross_ge = sc.AnnData(cross_ge,obs=data1.obs,var= data2.var.query("highly_variable"))
-
-            sc.pp.normalize_total(cross_ge)
-            sc.pp.log1p(cross_ge)
-            sc.pp.scale(cross_ge)
-            sc.tl.pca(cross_ge, n_comps=100, svd_solver="auto")
-            sc.pp.neighbors(cross_ge,  metric="cosine")
-            sc.tl.umap(cross_ge)
-            sc.pl.umap(cross_ge, color=["cell_type"],save=key1+'_to_'+key2+'.pdf')
+            cross_ge = sc.AnnData(cross_ge, obs=data1.obs, var=data2.var.query("highly_variable"))
+            if key2 == 'atac':
+                sccross.data.lsi(cross_ge, n_components=100, n_iter=15)
+                sc.pp.neighbors(cross_ge, use_rep='X_lsi', metric="cosine")
+                sc.tl.umap(cross_ge)
+                sc.pl.umap(cross_ge, color=["cell_type"], save=key1 + '_to_' + key2 + '.pdf')
+            else:
+                sc.pp.normalize_total(cross_ge)
+                sc.pp.log1p(cross_ge)
+                sc.pp.scale(cross_ge)
+                sc.tl.pca(cross_ge, n_comps=100, svd_solver="auto")
+                sc.pp.neighbors(cross_ge, metric="cosine")
+                sc.tl.umap(cross_ge)
+                sc.pl.umap(cross_ge, color=["cell_type"], save=key1 + '_to_' + key2 + '.pdf')
 
 
 # Data enhancing
@@ -100,16 +105,23 @@ for key, data in datalist.items():
     data.obsm['enhanced'] = cross.generate_enhance(key, data)
 
     data_enhanced = sc.AnnData(data.obsm['enhanced'],obs=data.obs,var = data.var.query("highly_variable"))
-    sc.pp.normalize_total(data_enhanced)
-    sc.pp.log1p(data_enhanced)
-    sc.pp.scale(data_enhanced)
-    sc.tl.pca(data_enhanced, n_comps=100, svd_solver="auto")
-    sc.pp.neighbors(data_enhanced, metric="cosine")
-    sc.tl.umap(data_enhanced)
-    sc.pl.umap(data_enhanced, color=["cell_type"], save=key + '_enhance' + '.pdf')
-    sc.tl.rank_genes_groups(data_enhanced,'cell_type')
-    df = pd.DataFrame(data_enhanced.uns['rank_genes_groups']['names'])
-    df.to_csv(key+'_enhanced_rankGenes_cellType.csv')
+    if key == 'atac':
+        sccross.data.lsi(data_enhanced, n_components=100, n_iter=15)
+        sc.pp.neighbors(data_enhanced, use_rep='X_lsi', metric="cosine")
+        sc.tl.umap(data_enhanced)
+        sc.pl.umap(data_enhanced, color=["cell_type"], save=key + '_enhance' + '.pdf')
+
+    else:
+        sc.pp.normalize_total(data_enhanced)
+        sc.pp.log1p(data_enhanced)
+        sc.pp.scale(data_enhanced)
+        sc.tl.pca(data_enhanced, n_comps=100, svd_solver="auto")
+        sc.pp.neighbors(data_enhanced, metric="cosine")
+        sc.tl.umap(data_enhanced)
+        sc.pl.umap(data_enhanced, color=["cell_type"], save=key + '_enhance' + '.pdf')
+        sc.tl.rank_genes_groups(data_enhanced, 'cell_type')
+        df = pd.DataFrame(data_enhanced.uns['rank_genes_groups']['names'])
+        df.to_csv(key + '_enhanced_rankGenes_cellType.csv')
 
 
 # Multi-omics data simulation
