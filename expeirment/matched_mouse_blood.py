@@ -118,7 +118,7 @@ for i in fold:
     for j in cell_type:
         multi_simu = cross.generate_multiSim(datalist,'cell_type',j, int(i*len(rna[rna.obs['cell_type'].isin([j])])))
         for adata in multi_simu:
-            adata.obs['cell_type'] = cell_type+'_s'
+            adata.obs['cell_type'] = j+'_s'
 
         rna_temp = rna.copy()
         rna_temp.X = rna_temp.layers['counts']
@@ -135,12 +135,12 @@ for i in fold:
         sc.tl.pca(rna_temp, n_comps=100, svd_solver="auto")
         sc.pp.neighbors(rna_temp,  metric="cosine")
         sc.tl.umap(rna_temp)
-        sc.pl.umap(rna_temp, color=["cell_type"],save='RNA'+cell_type+'_'+fold+'.pdf')
+        sc.pl.umap(rna_temp, color=["cell_type"],save='RNA'+j+'_'+str(i)+'.pdf')
 
         sccross.data.lsi(atac_temp, n_components=100, n_iter=15)
         sc.pp.neighbors(atac_temp, use_rep = 'X_lsi',  metric="cosine")
         sc.tl.umap(atac_temp)
-        sc.pl.umap(atac_temp, color=["cell_type"],save='ATAC'+cell_type+'_'+fold+'.pdf')
+        sc.pl.umap(atac_temp, color=["cell_type"],save='ATAC'+j+'_'+str(i)+'.pdf')
 
 
 

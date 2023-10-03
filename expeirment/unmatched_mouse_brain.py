@@ -120,16 +120,16 @@ for i in fold:
     for j in cell_type:
         multi_simu = cross.generate_multiSim(datalist,'cell_type',j, int(i*len(rna[rna.obs['cell_type'].isin([j])])))
         for adata in multi_simu:
-            adata.obs['cell_type'] = cell_type+'_s'
+            adata.obs['cell_type'] = j + '_s'
 
         rna_temp = rna.copy()
         rna_temp.X = rna_temp.layers['counts']
-        rna_temp = rna_temp[:,rna_temp.var.query("highly_variable").index]
-        rna_temp = sc.concat([rna_temp,multi_simu[0]])
+        rna_temp = rna_temp[:, rna_temp.var.query("highly_variable").index]
+        rna_temp = sc.concat([rna_temp, multi_simu[0]])
 
         atac_temp = atac.copy()
-        atac_temp = atac_temp[:,atac_temp.var.query("highly_variable").index]
-        atac_temp = sc.concat([atac_temp,multi_simu[1]])
+        atac_temp = atac_temp[:, atac_temp.var.query("highly_variable").index]
+        atac_temp = sc.concat([atac_temp, multi_simu[1]])
 
         met_temp = met.copy()
         met_temp = met_temp[:, met_temp.var.query("highly_variable").index]
@@ -139,14 +139,14 @@ for i in fold:
         sc.pp.log1p(rna_temp)
         sc.pp.scale(rna_temp)
         sc.tl.pca(rna_temp, n_comps=100, svd_solver="auto")
-        sc.pp.neighbors(rna_temp,  metric="cosine")
+        sc.pp.neighbors(rna_temp, metric="cosine")
         sc.tl.umap(rna_temp)
-        sc.pl.umap(rna_temp, color=["cell_type"],save='RNA'+cell_type+'_'+fold+'.pdf')
+        sc.pl.umap(rna_temp, color=["cell_type"], save='RNA' + j + '_' + str(i) + '.pdf')
 
         sccross.data.lsi(atac_temp, n_components=100, n_iter=15)
-        sc.pp.neighbors(atac_temp, use_rep = 'X_lsi',  metric="cosine")
+        sc.pp.neighbors(atac_temp, use_rep='X_lsi', metric="cosine")
         sc.tl.umap(atac_temp)
-        sc.pl.umap(atac_temp, color=["cell_type"],save='ATAC'+cell_type+'_'+fold+'.pdf')
+        sc.pl.umap(atac_temp, color=["cell_type"], save='ATAC' + j + '_' + str(i) + '.pdf')
 
         sc.pp.normalize_total(met_temp)
         sc.pp.log1p(met_temp)
@@ -154,7 +154,7 @@ for i in fold:
         sc.tl.pca(met_temp, n_comps=100, svd_solver="auto")
         sc.pp.neighbors(met_temp, metric="cosine")
         sc.tl.umap(met_temp)
-        sc.pl.umap(met_temp, color=["cell_type"], save='met' + cell_type + '_' + fold + '.pdf')
+        sc.pl.umap(met_temp, color=["cell_type"], save='met' + j + '_' + str(i) + '.pdf')
 
 
 
