@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "sccross"
-version = "1.0.0"
+version = "1.0.1"
 description = "Single cell multi-omics cross modal generation, multi-omics simulation and perturbation"
 readme = "README.md"
 requires-python = ">=3.6"

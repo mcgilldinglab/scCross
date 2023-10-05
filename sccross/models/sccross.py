@@ -1388,14 +1388,13 @@ def configure_dataset(
 
 
     if use_gs:
-        # scanpy.pp.highly_variable_genes(adata)
-
         gene = adata
         if adata.obs['domain'][0] != 'scRNA-seq':
             gene = adata.uns['gene']
-            gene.obs['cell_type'] = adata.obs['cell_type']
 
-        expression_only = AnnDataset_gs(gene, label_name='cell_type')
+
+
+        expression_only = AnnDataset_gs(gene)
         genes_upper = expression_only.genes_upper
         prior_name = "c5.go.bp.v7.4.symbols.gmt+c2.cp.v7.4.symbols.gmt+TF-DNA"
         gene_sets_path = "./gene_sets/"
