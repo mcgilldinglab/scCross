@@ -33,7 +33,7 @@ Single-cell multi-omics provides deep biological insights, but data scarcity and
 ## Installation
 
 
-You may install scCross and its dependencies by the following command:
+You may install scCross by the following command:
 
 ```
 pip install sccross
