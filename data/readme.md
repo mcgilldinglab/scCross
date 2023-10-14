@@ -10,3 +10,5 @@
 * Human cell atlas: 
     * scRNA-seq: GSE156793
     * scATAC-seq: GSE149683
+    
+Thanks for the h5ad format datasets for Matched mouse cortex dataset, Unmatched mouse cortex dataset and Human cell atlas dataset provided in [h5ad_datasets](https://scglue.readthedocs.io/en/latest/data.html).
