@@ -16,7 +16,7 @@ Single-cell multi-omics provides deep biological insights, but data scarcity and
 
 2. Generate cross-compatible single-cell data between two different types in the training set.
 
-3. Enhance single-cell omics data through self-improvement techniques.
+3. Augment single-cell omics data through self-improvement techniques.
 
 4. Simulate single-cell multi-omics data that match a specific cellular state, irrespective of the type and quantity of omics data involved.
 

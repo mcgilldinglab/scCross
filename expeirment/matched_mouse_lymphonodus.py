@@ -99,27 +99,27 @@ for key1,data1 in datalist.items():
                 sc.pl.umap(cross_ge, color=["cell_type"], save=key1 + '_to_' + key2 + '.pdf')
 
 
-# Data enhancing
+# Data augmentation
 for key, data in datalist.items():
-    data.obsm['enhanced'] = cross.generate_enhance(key, data)
+    data.obsm['augmented'] = cross.generate_augment(key, data)
 
-    data_enhanced = sc.AnnData(data.obsm['enhanced'],obs=data.obs,var = data.var.query("highly_variable"))
+    data_augmented = sc.AnnData(data.obsm['augmented'],obs=data.obs,var = data.var.query("highly_variable"))
     if key == 'atac':
-        sccross.data.lsi(data_enhanced, n_components=100, n_iter=15)
-        sc.pp.neighbors(data_enhanced, use_rep='X_lsi', metric="cosine")
-        sc.tl.umap(data_enhanced)
-        sc.pl.umap(data_enhanced, color=["cell_type"], save=key + '_enhance' + '.pdf')
+        sccross.data.lsi(data_augmented, n_components=100, n_iter=15)
+        sc.pp.neighbors(data_augmented, use_rep='X_lsi', metric="cosine")
+        sc.tl.umap(data_augmented)
+        sc.pl.umap(data_augmented, color=["cell_type"], save=key + '_augment' + '.pdf')
     else:
-        sc.pp.normalize_total(data_enhanced)
-        sc.pp.log1p(data_enhanced)
-        sc.pp.scale(data_enhanced)
-        sc.tl.pca(data_enhanced, n_comps=100, svd_solver="auto")
-        sc.pp.neighbors(data_enhanced, metric="cosine")
-        sc.tl.umap(data_enhanced)
-        sc.pl.umap(data_enhanced, color=["cell_type"], save=key + '_enhance' + '.pdf')
-        sc.tl.rank_genes_groups(data_enhanced, 'cell_type')
-        df = pd.DataFrame(data_enhanced.uns['rank_genes_groups']['names'])
-        df.to_csv(key + '_enhanced_rankGenes_cellType.csv')
+        sc.pp.normalize_total(data_augmented)
+        sc.pp.log1p(data_augmented)
+        sc.pp.scale(data_augmented)
+        sc.tl.pca(data_augmented, n_comps=100, svd_solver="auto")
+        sc.pp.neighbors(data_augmented, metric="cosine")
+        sc.tl.umap(data_augmented)
+        sc.pl.umap(data_augmented, color=["cell_type"], save=key + '_augment' + '.pdf')
+        sc.tl.rank_genes_groups(data_augmented, 'cell_type')
+        df = pd.DataFrame(data_augmented.uns['rank_genes_groups']['names'])
+        df.to_csv(key + '_augmented_rankGenes_cellType.csv')
 
 
 # Multi-omics data simulation

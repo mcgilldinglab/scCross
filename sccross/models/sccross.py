@@ -2015,12 +2015,12 @@ class SCCROSSModel(Model):
 
 
     @torch.no_grad()
-    def generate_enhance(
+    def generate_augment(
             self, key: str, adata: AnnData,  batch_size: int = 128
 
     ) -> np.ndarray:
         r"""
-        Generate enhanced single cell omic data
+        Generate augmented single cell omic data
 
         Parameters
         ----------
