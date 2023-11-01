@@ -49,8 +49,10 @@ rna.X = rna.layers['counts']
 genes = rna.var.query("highly_variable").index.to_numpy().tolist()
 difGenes = cross.perturbation_difGenes('rna',rna,'Status','Covid','Healthy',genes)
 
-gene_up = difGenes['up'][:100]
-rna[rna.obs['cell_type'].isin(['In']),genes].X += 0.5*rna[rna.obs['cell_type'].isin(['In']),genes].X
+gene_up = difGenes['up'][difGenes['up']>0]
+gene_down = difGenes['down'][difGenes['down']>0]
+rna[rna.obs['Status'].isin(['Healthy']),gene_down].X += 0.5*rna[rna.obs['Status'].isin(['Healthy']),gene_down].X
+rna[rna.obs['Status'].isin(['Healthy']),gene_up].X -= 0.5*rna[rna.obs['Status'].isin(['Healthy']),gene_up].X
 rnaCroadt = cross.generate_cross( 'rna', 'adt', rna, adt)
 rnaCroadt = sc.AnnData(rnaCroadt,obs=rna.obs,var= adt.var.query("highly_variable"))
 print(rnaCroadt.X)
