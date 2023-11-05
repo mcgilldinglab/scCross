@@ -1925,6 +1925,7 @@ class SCCROSSModel(Model):
 
         l_s = []
         z_s = torch.Tensor().cuda()
+        z_d_s = torch.Tensor().cuda()
 
 
 
@@ -1956,48 +1957,53 @@ class SCCROSSModel(Model):
                 )
                 z = u2z(u.mean)
 
+
+
+
+
                 l = torch.mean(l.cpu())
 
 
                 z_t = torch.mean(z.mean,dim=0,keepdim=True)
+                z_d = torch.mean(z.stddev, dim=0, keepdim=True)
 
                 l_s_t.append(l)
                 z_s = torch.cat((z_s, z_t))
+                z_d_s = torch.cat((z_d_s, z_d))
 
             l_s.append(np.mean(l_s_t))
 
         z_s_m = torch.mean(z_s,dim=0,keepdim=True)
+        z_d_s_m = torch.mean(z_d_s, dim=0, keepdim=True)
 
         g = 0
-        result_s = []
+        result_s = {}
+        result_t = []
+        for key, adata in adatas.items():
+            result_s[key] = torch.Tensor()
+        z = D.Normal(z_s_m, z_d_s_m)
+        for i in range(num):
+            u1samp = z.rsample()
+            g = 0
 
-        for key,adata in adatas.items():
-            z2u = self.net.z2u[key]
-            u2x = self.net.u2x[key]
+            for key, adata in adatas.items():
+                z2u = self.net.z2u[key]
+                u2x = self.net.u2x[key]
+                u = z2u(u1samp)
+                l = l_s[g]
+                b = 0
+                g = g + 1
+                x_out = u2x(u.mean, b, l)
+                result_s[key] = torch.cat((result_s[key], x_out.sample().cpu()))
 
-            u = z2u(z_s_m)
-
-
-            l = l_s[g]
-            b = 0
-            g = g+1
-            result = torch.Tensor()
-
-            for i in range(num):
-                u1samp = u.rsample()
-                x_out = u2x(u1samp, b, l)
-
-                result = torch.cat((result , x_out.sample().cpu()))
-
-            result = result.numpy()
-
-            adata_s = adata[:,adata.var.query("highly_variable").index.to_numpy().tolist()]
-            result_a = scanpy.AnnData(result,var=adata_s.var)
+        for key, adata in adatas.items():
+            result = result_s[key].numpy()
+            adata_s = adata[:, adata.var.query("highly_variable").index.to_numpy().tolist()]
+            result_a = scanpy.AnnData(result, var=adata_s.var)
+            result_t.append(result_a)
 
 
-            result_s.append(result_a)
-
-        return result_s
+        return result_t
 
     #generate_batch = generate_multiSim #alias
 
