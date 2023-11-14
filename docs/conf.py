@@ -9,7 +9,7 @@ project = 'scCross'
 version = sccross.__version__
 release = sccross.__version__
 author = "Xiu-hui Yang"
-copyright = "Hao Wu Lab, 2023"
+copyright = "Hao Wu Lab and Jun Ding Lab, 2023"
 
 extensions = [
     'sphinx.ext.autodoc',
