@@ -14,7 +14,7 @@ Single-cell multi-omics provides deep biological insights, but data scarcity and
 
 1. Combine more than three single-cell multi-omics datasets, whether they are matched or unmatched, into a unified latent space. This space can be used for downstream analysis, even when dealing with over 4 million cells of varying types.
 
-2. Cross-dataset cross-modality single-cell data generation.
+2. Generate cross-compatible single-cell data between two or more different omics even cross dataset.
 
 3. Augment single-cell omics data through self-improvement techniques.
 
