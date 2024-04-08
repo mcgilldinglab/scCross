@@ -144,16 +144,13 @@ def select_decoder(prob_model: str) -> type:
     decoder
         Decoder type
     """
-    if prob_model == "Normal":
-        return layers.NormalDataDecoder
-    if prob_model == "ZIN":
-        return layers.ZINDataDecoder
+
+
     if prob_model == "ZILN":
         return layers.ZILNDataDecoder
     if prob_model == "NB":
         return layers.NBDataDecoder
-    if prob_model == "ZINB":
-        return layers.ZINBDataDecoder
+
     raise ValueError("Invalid `prob_model`!")
 
 
