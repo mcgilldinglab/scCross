@@ -2166,7 +2166,7 @@ class SCCROSSModel(Model):
 
 
 
-            adata_u[:, gene].X += 1
+            adata_u[:, gene].X += 0.5*adata_u[:, gene].X
             sc.pp.normalize_total(adata_u)
             sc.pp.log1p(adata_u)
             sc.pp.scale(adata_u)
@@ -2216,8 +2216,8 @@ class SCCROSSModel(Model):
             if isinstance(adata_d.X, scipy.sparse._csr.csr_matrix):
                 adata_d.X = np.array(adata_d.X.todense())
 
-            adata_d[:, gene].X -= 1
-            adata_d.X[np.where(adata_d.X < 0.0)] = 0
+            adata_d[:, gene].X -= 0.5*adata_d[:, gene].X
+            #adata_d.X[np.where(adata_d.X < 0.0)] = 0
             sc.pp.normalize_total(adata_d)
             sc.pp.log1p(adata_d)
             sc.pp.scale(adata_d)
