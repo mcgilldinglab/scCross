@@ -57,3 +57,5 @@ rnaCroadt = cross.generate_cross( 'rna', 'adt', rna, adt)
 rnaCroadt = sc.AnnData(rnaCroadt,obs=rna.obs,var= adt.var.query("highly_variable"))
 print(rnaCroadt.X)
 
+
+
