@@ -19,7 +19,7 @@ v1.0.3
 
 Add API generate_multiSim.
 
-v1.0.4
+v1.0.4-v1.0.5
 ------
 
-Fix some issues.
+Improve code clearity
