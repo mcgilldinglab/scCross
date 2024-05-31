@@ -18,3 +18,8 @@ v1.0.3
 ------
 
 Add API generate_multiSim.
+
+v1.0.4
+------
+
+Fix some issues.
