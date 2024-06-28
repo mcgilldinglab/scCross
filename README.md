@@ -39,6 +39,9 @@ You may install scCross by the following command:
 pip install sccross
 ```
 
+## Example work-through
+Example work-through for each dataset in our study can be found in the [examples](https://github.com/mcgilldinglab/scCross/tree/main/examples) forder.
+
 ## Codeocean
 
 We employ [codeocean](https://codeocean.com/capsule/4757520/tree/v1) reproducible platform to help you get into our codes.
