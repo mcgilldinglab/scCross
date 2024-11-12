@@ -761,7 +761,7 @@ class SCCROSSTrainer(Trainer):
         x_u1_nll_sum = sum(self.domain_weight[k] * x_u1_nll[k] for k in net.keys)
         z_p_sum = sum(z_p_nll[k].sum(dim=1).mean() for k in net.keys[:-1])
 
-        vae_loss = self.lam_data * (x_elbo_sum+x_u1_nll_sum) + 0.04*z_kl_sum +0.005*z_p_sum
+        vae_loss = self.lam_data * (x_elbo_sum+x_u1_nll_sum) + 0.04*z_kl_sum +0.001*z_p_sum
 
 
 
