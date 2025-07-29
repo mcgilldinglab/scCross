@@ -22,4 +22,9 @@ Add API generate_multiSim.
 v1.0.4-v1.0.5
 ------
 
-Improve code clearity
+Improve code clearity.
+
+v1.0.6
+------
+
+Improve the efficiency of peak annotation.
