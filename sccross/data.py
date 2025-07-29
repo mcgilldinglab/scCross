@@ -924,7 +924,7 @@ def mnn_prior(
             Input dataset
 
     """
-
+    common_genes = set()
     adatas_modify = adatas.copy()
     rna = adatas_modify[0]
     atac = adatas_modify[1]
@@ -942,6 +942,12 @@ def mnn_prior(
             adatas_modify[i].var["chromStart"] = split.map(lambda x: x[1]).astype(int)
             adatas_modify[i].var["chromEnd"] = split.map(lambda x: x[2]).astype(int)
         else:
+
+            if len(common_genes) == 0:
+                common_genes = set(adatas_modify[i].var.index.values)
+            else:
+                common_genes &= set(adatas_modify[i].var.index.values)
+
             if 'chrom' not in adatas_modify[i].var.columns:
                 get_gene_annotation(
                     adatas_modify[i], gtf=gtf,
@@ -966,6 +972,11 @@ def mnn_prior(
     for i in range(len(adatas_modify)):
         if adatas_modify[i].obs['domain'][0] == 'scATAC-seq':
             adatas_modify[i] = atac2rna
+
+    if len(adatas_modify) > 2:
+        for i in range(len(adatas)):
+            adatas_modify[i] = adatas_modify[i][:, list(common_genes)]
+
 
     adatas_mnn = sc.external.pp.mnn_correct(*adatas_modify, k=20)
     adatas_mnn = adatas_mnn[0]
