@@ -28,3 +28,8 @@ v1.0.6
 ------
 
 Improve the efficiency of peak annotation.
+
+v1.0.7
+------
+
+Add ZINB distribution support.

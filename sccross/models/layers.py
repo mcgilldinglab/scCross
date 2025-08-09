@@ -446,8 +446,6 @@ class NBDataDecoder(DataDecoder):
     ) -> D.NegativeBinomial:
         scale = F.softplus(self.scale_lin[b])
         ptr = u
-        #print(u.shape)
-        #print(v.shape)
 
         ptr = getattr(self, f"linear_")(ptr)
 
@@ -461,6 +459,56 @@ class NBDataDecoder(DataDecoder):
             logits=(mu + EPS).log()
         )
 
+
+
+
+
+
+class ZINBDataDecoder(DataDecoder):
+
+    r"""
+    Zero-inflated negative binomial data decoder
+
+    Parameters
+    ----------
+    out_features
+        Output dimensionality
+    n_batches
+        Number of batches
+    """
+
+    def __init__(self, out_features: int, n_batches: int = 1) -> None:
+        super().__init__(out_features, n_batches=n_batches)
+        self.zi_logits = torch.nn.Parameter(torch.zeros(n_batches, out_features))
+        self.scale_lin = torch.nn.Parameter(torch.zeros(n_batches, out_features))
+        self.bias = torch.nn.Parameter(torch.zeros(n_batches, out_features))
+        self.log_theta = torch.nn.Parameter(torch.zeros(n_batches, out_features))
+        self.h_depth = 1
+        ptr_dim = 50
+        h_dim = out_features
+        # print(out_features)
+
+        setattr(self, f"linear_", torch.nn.Linear(ptr_dim, h_dim))
+
+    def forward(
+            self, u: torch.Tensor,
+            b: torch.Tensor, l: torch.Tensor
+    ):
+        scale = F.softplus(self.scale_lin[b])
+        ptr = u
+
+        ptr = getattr(self, f"linear_")(ptr)
+
+        logit_mu = scale * ptr + self.bias[b]
+        mu = F.softmax(logit_mu, dim=1) * l
+
+        log_theta = self.log_theta[b]
+
+        return ZINB(
+            self.zi_logits[b].expand_as(mu),
+            log_theta.exp(),
+            logits=(mu + EPS).log() - log_theta,
+        )
 
 
 
